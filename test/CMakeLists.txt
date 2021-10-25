@@ -7,5 +7,6 @@ PUBLIC
 target_sources(${TgtExe}
 PRIVATE
     main.cpp
+    cmdLine.cpp
 )
 
