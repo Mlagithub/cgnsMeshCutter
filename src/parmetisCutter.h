@@ -21,7 +21,7 @@ namespace MeshCut
         ParMetisMeshCutter(int argc, char** argv);
         virtual ~ParMetisMeshCutter();
     public:
-        void cut(const std::string &mesh, const int npart) override;
+        void cut(const std::string &mesh, const int npart, const int nx = 0, const int ny = 0, const int nz = 0) override;
     
     private:
         using cgt = cgsize_t;

@@ -26,4 +26,6 @@ PRIVATE
     timeStat.cpp
     parmetisCutter.cpp
     mpiAdapter.cpp
+    cartesianCutter.cpp
+    stringUtil.cpp
 )

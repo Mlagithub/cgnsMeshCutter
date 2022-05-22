@@ -3,11 +3,12 @@
 #include "mpiAdapter.h"
 #include "timeStat.h"
 #include "format.h"
-#include "fmt/format.h"
+// #include "fmt/format.h"
 
 #include <parmetis.h>
 #include <pcgnslib.h>
 #include <cgnslib.h>
+#include <cmath>
 #include <ctime>
 #include <array>
 #include <algorithm>
@@ -50,7 +51,7 @@ static ElementType_t CellType(const int CGNSCellTypeFalg)
         rst = ElementType_t::HEXA_8;
         break;
     default:
-        fmt::format("unknown element type", static_cast<ElementType_t>(CGNSCellTypeFalg),'\n');
+        //fmt::format("unknown element type", static_cast<ElementType_t>(CGNSCellTypeFalg),'\n');
         break;
     }
     return rst;
@@ -67,7 +68,7 @@ static int NodeCountOfFaceCell(const ElementType_t FaceCellType)
         return 4;
         break;
     default:
-        fmt::format("Wrong to get node count of face type: ", FaceCellType, '\n');
+        //fmt::format("Wrong to get node count of face type: ", FaceCellType, '\n');
         break;
     }
 }
@@ -86,7 +87,7 @@ static ElementType_t CellType(const int nodeCnt, const int dim)
             return ElementType_t::QUAD_4;
             break;
         default:
-            fmt::format("not supported element type with[dim, nodes] [", dim, nodeCnt, "]\n");
+            //fmt::format("not supported element type with[dim, nodes] [", dim, nodeCnt, "]\n");
             break;
         }
         break;
@@ -106,7 +107,7 @@ static ElementType_t CellType(const int nodeCnt, const int dim)
             return ElementType_t::HEXA_8;
             break;
         default:
-            fmt::format("not supported element type with[dim, nodes] [", dim, nodeCnt, "]\n");
+            //fmt::format("not supported element type with[dim, nodes] [", dim, nodeCnt, "]\n");
             break;
         }
         break;
@@ -138,7 +139,7 @@ namespace MeshCut
     void checkPCGNSCall(int errorCode, Args ... args) {
         if (errorCode != CG_OK)
         {
-            fmt::format("Wrong at parmetisDecomposer. ", std::forward<Args>(args)...);
+            //fmt::format("Wrong at parmetisDecomposer. ", std::forward<Args>(args)...);
             // cgp_error_exit();
         }
     }
@@ -147,7 +148,7 @@ namespace MeshCut
     void checkCGNSCall(int errorCode, Args ... args) {
         if (errorCode != CG_OK)
         {
-            fmt::format("Wrong at parmetisDecomposer. ", std::forward<Args>(args)...);
+            //fmt::format("Wrong at parmetisDecomposer. ", std::forward<Args>(args)...);
             // cg_error_exit();
         }
     }
@@ -274,7 +275,7 @@ namespace MeshCut
         // check number of Base
         if (fp->nDataBase() != 1)
         {
-            fmt::format("Thread", this->rank_, "Wrong number of Base:", fp->nDataBase(), "should be 1.\n");
+            //fmt::format("Thread", this->rank_, "Wrong number of Base:", fp->nDataBase(), "should be 1.\n");
             // cg_error_exit();
             return false;
         }
@@ -282,7 +283,7 @@ namespace MeshCut
         // check number of zone
         if (fp->GetDatabase().nZone() != 1)
         {
-            fmt::format("Thread", this->rank_, "Wrong number of Zone:", fp->GetDatabase().nZone(), "should be 1.\n");
+            //fmt::format("Thread", this->rank_, "Wrong number of Zone:", fp->GetDatabase().nZone(), "should be 1.\n");
             // cg_error_exit();
             return false;
         }
@@ -291,43 +292,43 @@ namespace MeshCut
         // TODO: only support unstuucture
         if (fp->GetDatabase().GetZone().type() != CGIO::ZoneType::Unstructured)
         {
-            fmt::format(
-                "Thread", this->rank_, "Wrong type of Zone:", [&]() {
-                    std::string rst;
-                    switch (fp->GetDatabase().GetZone().type())
-                    {
-                    case ZoneType_t::Structured:
-                        rst = "Structured";
-                        break;
-                    case ZoneType_t::Unstructured:
-                        rst = "Unstructured";
-                        break;
-                    case ZoneType_t::ZoneTypeNull:
-                        rst = "ZoneTypeNull";
-                        break;
-                    case ZoneType_t::ZoneTypeUserDefined:
-                        rst = "ZoneTypeUserDefined";
-                        break;
-                    default:
-                        break;
-                    }
-                    return rst;
-                }(),
-                "should be Unstructured\n");
+            // fmt::format(
+            //     "Thread", this->rank_, "Wrong type of Zone:", [&]() {
+            //         std::string rst;
+            //         switch (fp->GetDatabase().GetZone().type())
+            //         {
+            //         case ZoneType_t::Structured:
+            //             rst = "Structured";
+            //             break;
+            //         case ZoneType_t::Unstructured:
+            //             rst = "Unstructured";
+            //             break;
+            //         case ZoneType_t::ZoneTypeNull:
+            //             rst = "ZoneTypeNull";
+            //             break;
+            //         case ZoneType_t::ZoneTypeUserDefined:
+            //             rst = "ZoneTypeUserDefined";
+            //             break;
+            //         default:
+            //             break;
+            //         }
+            //         return rst;
+            //     }(),
+            //     "should be Unstructured\n");
             // cg_error_exit();
             return false;
         }
         return true;
     }
 
-    void ParMetisMeshCutter::cut(const std::string &mesh, const int npart)
+    void ParMetisMeshCutter::cut(const std::string &mesh, const int npart, const int nx, const int ny, const int nz)
     {
         this->isMaster_ = (this->rank_==0);
-        if(this->isMaster_) fmt::format("Thread", this->rank_, "Begin ParmetisDecomposer\n");
+        if(this->isMaster_) //fmt::format("Thread", this->rank_, "Begin ParmetisDecomposer\n");
         nparts_ = npart;
         if(this->nparts_<2)
         {
-            fmt::format("Do nothing with decompose number", this->nparts_, " Please check your config file.\n");
+            //fmt::format("Do nothing with decompose number", this->nparts_, " Please check your config file.\n");
             return;
         }
 
@@ -337,16 +338,16 @@ namespace MeshCut
         bigFile_->Open(mesh.c_str());
 
         // check support
-        if(!this->checkCGNSFile(bigFile_)) fmt::format("check", bigFile_->name(), "field, from", __FILE__, __LINE__, "\n");
+        if(!this->checkCGNSFile(bigFile_)) //fmt::format("check", bigFile_->name(), "field, from", __FILE__, __LINE__, "\n");
 
         // 
         this->totalNode_=bigFile_->GetDatabase().GetZone().nVertex();
         this->totalCell_=bigFile_->GetDatabase().GetZone().nCell();
-        if(isMaster_) fmt::format(format("Thread %d zone %-20s [node, element]->[%6d, %6d]\n", this->rank_, bigFile_->GetDatabase().GetZone().GetName().c_str(), this->totalNode_, this->totalCell_));
+        if(isMaster_) //fmt::format(format("Thread %d zone %-20s [node, element]->[%6d, %6d]\n", this->rank_, bigFile_->GetDatabase().GetZone().GetName().c_str(), this->totalNode_, this->totalCell_));
         for(auto ithSection = 0; ithSection < bigFile_->GetDatabase().GetZone().nSections(); ++ithSection)
         {
             auto curSection = bigFile_->GetDatabase().GetZone().GetSection(ithSection);
-            if(isMaster_) fmt::format(format("Thread %d   section %-20s [%2d, %6d, %6d].  is body-section: %d\n", this->rank_, curSection.GetName().c_str(), curSection.GetElementType(), curSection.startID(), curSection.endID(), curSection.isBodySection()));
+            // if(isMaster_) //fmt::format(format("Thread %d   section %-20s [%2d, %6d, %6d].  is body-section: %d\n", this->rank_, curSection.GetName().c_str(), curSection.GetElementType(), curSection.startID(), curSection.endID(), curSection.isBodySection()));
         }
         
         this->decompose_body_section();
@@ -354,7 +355,7 @@ namespace MeshCut
 
 
         TimeStat end;
-        fmt::format("Cut time: {}\n", end-start);
+        //fmt::format("Cut time: {}\n", end-start);
         return;
     }
 
@@ -424,7 +425,7 @@ namespace MeshCut
 
             curSection.init(ithSection, cgio_section);
 
-            fmt::format(format("[Thread, start, end, cell_size_this_rank] => [%d, %d, %d, %d]\n", rank_, curSection.start, curSection.end, curSection.cell_size_this_rank));
+            //fmt::format(format("[Thread, start, end, cell_size_this_rank] => [%d, %d, %d, %d]\n", rank_, curSection.start, curSection.end, curSection.cell_size_this_rank));
 
         }
         MPI_Barrier(MPI_COMM_WORLD);
@@ -536,11 +537,11 @@ namespace MeshCut
 
             if(stat!=METIS_OK)
             {
-                fmt::format("Thread", this->rank_, "ParMETIS_V3_PartMeshKway return error while divide mesh:", curSection.name, '\n');
+                //fmt::format("Thread", this->rank_, "ParMETIS_V3_PartMeshKway return error while divide mesh:", curSection.name, '\n');
                 exit(EXIT_FAILURE);
             }
             else{
-                fmt::format(format("Thread %4d decompose %-15s successfully within %10.3G seconds\n", this->rank_, curSection.name.c_str(), TimeStat()-stime));
+                //fmt::format(format("Thread %4d decompose %-15s successfully within %10.3G seconds\n", this->rank_, curSection.name.c_str(), TimeStat()-stime));
             }
         }   
 
@@ -554,12 +555,12 @@ namespace MeshCut
         
         if(bodySections_.empty())
         {
-            if(this->isMaster_) fmt::format("body section is empty.\n");
+            if(this->isMaster_) //fmt::format("body section is empty.\n");
             return;
         } 
         if(bodySections_.size()>1)
         {
-            fmt::format("Thread",this->rank_, "Multiple body-sections are not supported yet.\n");
+            //fmt::format("Thread",this->rank_, "Multiple body-sections are not supported yet.\n");
             return;
         }
 
@@ -875,7 +876,7 @@ namespace MeshCut
         for(int i=0; i<this->nparts_;++i)
         {
             checkPCGNSCall(cgp_close(fp[i]));
-            fmt::format("{} close file: {}\n", this->rank_, fp[i]);
+            //fmt::format("{} close file: {}\n", this->rank_, fp[i]);
         }
 
 
@@ -938,7 +939,7 @@ namespace MeshCut
         }
         
 
-        fmt::format(this->rank_, "clear memory and finish buildMesh\n");
+        //fmt::format(this->rank_, "clear memory and finish buildMesh\n");
         */
        
     }
@@ -1726,7 +1727,7 @@ namespace MeshCut
         }
         if(!rst)
         {
-            fmt::format("Unsupported element type:", t, '\n');
+            //fmt::format("Unsupported element type:", t, '\n');
         }
         return rst;
     };

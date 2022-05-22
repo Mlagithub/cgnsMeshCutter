@@ -5,7 +5,7 @@
 #include "Zone.h"
 #include "format.h"
 
-#include "fmt/format.h"
+// #include "fmt/format.h"
 
 
 #include <cstring>
@@ -144,7 +144,7 @@ namespace CGIO
             *buffer = new cglong_t[len];
             break;
         default:
-            fmt::format(format("Data type %s not supported for ElementRange\n", type.second));
+            //fmt::format(format("Data type %s not supported for ElementRange\n", type.second));
             break;
         }
         return type.first;
@@ -178,7 +178,7 @@ namespace CGIO
         }
         else
         {
-            fmt::format(format("Data type %s not supported for %s\n", data_type, nodeName));
+            //fmt::format(format("Data type %s not supported for %s\n", data_type, nodeName));
         }
     }
 
@@ -343,7 +343,7 @@ namespace CGIO
             break;
         default:
             // throw "Unsupported element type";
-            fmt::format("Unsupported element type\n");
+            //fmt::format("Unsupported element type\n");
             break;
         }
         return cell_dim == base_ptr->GetCellDim();

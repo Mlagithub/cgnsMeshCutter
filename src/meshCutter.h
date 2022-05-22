@@ -13,7 +13,7 @@ public:
     MeshCutter(/* args */);
     virtual ~MeshCutter();
 
-    virtual void cut(const std::string &mesh, const int npart) = 0;
+    virtual void cut(const std::string &mesh, const int npart, const int nx = 0, const int ny = 0, const int nz = 0) = 0;
 };
 } // namespace MeshCut
 
