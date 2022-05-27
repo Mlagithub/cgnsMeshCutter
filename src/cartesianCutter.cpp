@@ -660,14 +660,6 @@ void CartesianCutter::cut(
             writeSection(curS, iFile);
             writeGlobalInfo(curS, iFile);
             updateOuterFace(curS, iFile);
-
-            // std::fstream fp(format("cellIdMap_%d.txt", iFile), std::ios_base::out);
-            // for(auto it : cellIdMap_[curS.id])
-            // {
-            //     fp << it.first << ',' << it.second << '\n';
-            // }
-            // fp.close();
-
             curS.data.clear();
             curS.offset.clear();
         }
@@ -856,14 +848,11 @@ bool CartesianCutter::pickBodyCellInBox(const BoundBox& box, Section &curSection
     vector<cgsize_t> data, offset, tmp;
     auto isMixed = (curSection.cellType == CGNS_ENUMV(MIXED));
     auto loader = CellLoader{curSection, data, offset, bigFile_};
-    // int n = 0;
-    // cellIdMap_[curSection.id].clear();
     while (loader.nextCell(tmp))
     {
         if (this->inBox(box, tmp, CellType(loader.flag)))
         {
             curSection.data.push_back(tmp);
-            // cellIdMap_[curSection.id].insert({curSection.data.size()-1, n});
             if (isMixed)
             {
                 curSection.typeFlag.push_back(loader.flag);
@@ -872,7 +861,6 @@ bool CartesianCutter::pickBodyCellInBox(const BoundBox& box, Section &curSection
             }
         }
         tmp.clear();
-        // ++n;
     }
     return !curSection.data.empty();
 }
@@ -1038,19 +1026,21 @@ void CartesianCutter::rwInterface(const int id)
             writeSection(curS, id);      
             writeSection(nbrS, nbr);   
 
-            // std::fstream fcur(format("Interface_%d_%d", id, nbr), std::ios_base::out);
-            // std::for_each(curS.data.begin(), curS.data.end(), [&](const vector<cgsize_t> &cell) {
-            //     auto tmp = this->cellCenter(cell, (cell.size()==3) ? ElementType_t::TRI_3 : ElementType_t::QUAD_4);
-            //     fcur << tmp << '\n';  
-            // });
-            // fcur.close();
+#ifdef DEBUG_MODE
+            std::fstream fcur(format("Interface_%d_%d", id, nbr), std::ios_base::out);
+            std::for_each(curS.data.begin(), curS.data.end(), [&](const vector<cgsize_t> &cell) {
+                auto tmp = this->cellCenter(cell, (cell.size()==3) ? ElementType_t::TRI_3 : ElementType_t::QUAD_4);
+                fcur << tmp << '\n';  
+            });
+            fcur.close();
 
-            // std::fstream fnbr(format("Interface_%d_%d", nbr, id), std::ios_base::out);
-            // std::for_each(nbrS.data.begin(), nbrS.data.end(), [&](const vector<cgsize_t> &cell) {
-            //     auto tmp = this->cellCenter(cell, (cell.size()==3) ? ElementType_t::TRI_3 : ElementType_t::QUAD_4);
-            //     fnbr << tmp << '\n';  
-            // });
-            // fnbr.close();
+            std::fstream fnbr(format("Interface_%d_%d", nbr, id), std::ios_base::out);
+            std::for_each(nbrS.data.begin(), nbrS.data.end(), [&](const vector<cgsize_t> &cell) {
+                auto tmp = this->cellCenter(cell, (cell.size()==3) ? ElementType_t::TRI_3 : ElementType_t::QUAD_4);
+                fnbr << tmp << '\n';  
+            });
+            fnbr.close();
+#endif
         }
     }
 }

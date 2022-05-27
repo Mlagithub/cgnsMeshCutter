@@ -149,7 +149,6 @@ private:
     map<int, cgsize_t> globalOffset_;
     map<int, Section> sections_;
     map<int, map<cgsize_t, cgsize_t>> nodeIdMap_;
-    // map<int, map<cgsize_t, cgsize_t>> cellIdMap_;
     vector<vector<double>> nodesData_;
     set<cgsize_t> nodeIdInBox_;
     map<int, set<Face>> outerFace_;
