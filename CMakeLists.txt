@@ -18,12 +18,13 @@ endif()
 
 # 
 set(TgtLib "cgnsCutter")
-add_library(${TgtLib} SHARED "")
+add_library(${TgtLib} STATIC "")
 
 # Cutter
 set(TgtExe "cutter.exe")
 add_executable(${TgtExe} "")
 target_link_libraries(${TgtExe} PUBLIC ${TgtLib})
+target_link_libraries(${TgtExe} PUBLIC "libpthread.so")
 
 add_subdirectory(src)
 add_subdirectory(test)
