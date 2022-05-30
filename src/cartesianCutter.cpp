@@ -908,7 +908,7 @@ void CartesianCutter::rwBoundary(const int id)
         auto loader = CellLoader{curSection, data, offset, bigFile_};
         while (loader.nextCell(tmp))
         {
-            auto face = Face{tmp};
+            auto face = stringAFace(tmp);
             if(curOuterFace.find(face) != curOuterFace.end())
             {
                 curOuterFace.erase(face);
@@ -989,17 +989,17 @@ void CartesianCutter::rwInterface(const int id)
         Section curS, nbrS;
         for(auto face = nbrOuterFace.begin(); face!=nbrOuterFace.end();)
         {
-            auto it = curOuterFace.find(*face);
+            auto it = curOuterFace.find(face->first);
             if(it != curOuterFace.end())
             {
-                curS.data.emplace_back(it->nodeList);
-                nbrS.data.push_back(face->nodeList);
+                curS.data.emplace_back(it->second);
+                nbrS.data.push_back(face->second);
 
-                auto t = CellType(it->nodeList.size(), 2);
+                auto t = CellType(it->second.size(), 2);
                 curS.typeFlag.push_back(t);
                 nbrS.typeFlag.push_back(t);
 
-                typeFlags.insert(it->nodeList.size());
+                typeFlags.insert(it->second.size());
 
                 it = curOuterFace.erase(it);
                 face = nbrOuterFace.erase(face);
@@ -1045,6 +1045,22 @@ void CartesianCutter::rwInterface(const int id)
     }
 }
 
+string CartesianCutter::stringAFace(const vector<cgsize_t>& face)
+{
+    if(face.empty()) return "";
+    
+    set<cgsize_t> tmp;
+    for(auto it : face) tmp.insert(it);
+
+    return std::accumulate(
+        std::next(tmp.begin()), 
+        tmp.end(), 
+        std::to_string(*tmp.begin()), 
+        [](string sum, const cgsize_t id){
+            return sum + "-" + std::to_string(id);
+        });
+}
+
 void CartesianCutter::updateNodeId(const Section &curS)
 {
     for (auto jt : curS.data)
@@ -1065,7 +1081,7 @@ void CartesianCutter::updateOuterFace(const Section& curS, const int id)
         auto cellType = curS.cellType == CGNS_ENUMV(MIXED) ? CellType(curS.typeFlag[i]) : curS.cellType;
         for (auto it : allFaceInCell(curS.data[i], cellType))
         {
-            auto val = Face{it};
+            auto val = stringAFace(it);
             if (curOuterFace.find(val) != curOuterFace.end()) { curOuterFace.erase(val); }
             else
             {

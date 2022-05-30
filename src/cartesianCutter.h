@@ -151,7 +151,7 @@ private:
     map<int, map<cgsize_t, cgsize_t>> nodeIdMap_;
     vector<vector<double>> nodesData_;
     set<cgsize_t> nodeIdInBox_;
-    map<int, set<Face>> outerFace_;
+    map<int, map<string, vector<cgsize_t>>> outerFace_;
     vector<int> bodySection_, bdySection_, interiorSection_;
     vector<cgsize_t> idOffset_;
 
@@ -197,6 +197,8 @@ private:
     void rwInterior(const int id);
 
     void rwInterface(const int id);
+
+    string stringAFace(const vector<cgsize_t>& face);
 
     void updateNodeId(const Section& curS);
 
