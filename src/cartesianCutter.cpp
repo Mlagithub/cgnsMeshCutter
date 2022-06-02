@@ -385,7 +385,7 @@ void CartesianCutter::checkFile(string fileName)
         format("%s is not a CGNS file\n", fileName.c_str()));
 
     check(
-        cg_open(fileName.c_str(), CG_MODE_READ, &fp), 
+        (cg_set_file_type(CG_FILE_ADF) == CG_OK && cg_open(fileName.c_str(), CG_MODE_READ, &fp) == CG_OK) || (cg_set_file_type(CG_FILE_HDF5) == CG_OK && cg_open(fileName.c_str(), CG_MODE_READ, &fp) == CG_OK), 
         format("can not open file: %s \n", fileName.c_str()));
 
     check(
