@@ -22,6 +22,9 @@ using std::unordered_map;
 
 namespace MeshCut
 {
+static void check(const int runCode, string&& errStr="", string&& okStr="");
+
+static void check(bool state, string&& errStr="", string&& okStr="");
 
 class CartesianCutter : public MeshCutter
 {
@@ -32,6 +35,7 @@ public:
         const int nx = 1, 
         const int ny = 1, 
         const int nz = 1, 
+        const string weightFilename = "",
         bool multiZone = false, 
         vector<string> fluidDomainNameRule={},
         string interiorSection = ""
@@ -133,6 +137,31 @@ private:
         cgsize_t id = 0;
     };
 
+    struct Weight
+    {
+    public:
+        Weight(const int nx, const int ny, const int nz);
+
+        // weight value of each sub-mesh at X/Y/Z directions
+        // wx_mesh0, wx_mesh1, wx_mesh2, ... wx_meshN
+        // wy_mesh0, wy_mesh1, wy_mesh2, ... wy_meshN
+        // wz_mesh0, wz_mesh1, wz_mesh2, ... wz_meshN
+        Weight(string fname, const int nx, const int ny, const int nz);
+
+        double x(const Location& loc) const;
+        double y(const Location& loc) const;
+        double z(const Location& loc) const;
+        double sumX(const Location& loc) const;
+        double sumY(const Location& loc) const;
+        double sumZ(const Location& loc) const;
+    private:
+        void updateSumWeight();
+        void normalize();
+
+    private:
+        vector<vector<double>> weights_, sumWeights_;
+    };
+
 private:
     int nx_, ny_, nz_, n_;
     int bigFile_;
@@ -160,11 +189,7 @@ private:
 
     vector<double> boundingBoxBigMesh();
 
-    void boundingBoxSmallMesh();
-
-    void check(const int runCode, string&& errStr="", string&& okStr="");
-
-    void check(bool state, string&& errStr="", string&& okStr="");
+    void boundingBoxSmallMesh(string weightFilename);
 
     void checkFile(string filename);
 

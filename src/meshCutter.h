@@ -22,7 +22,8 @@ public:
         const int npart, 
         const int nx = 0, 
         const int ny = 0, 
-        const int nz = 0, 
+        const int nz = 0,
+        const string weightFilename = "",
         bool multiZone = false, 
         vector<string> fluidDomainNameRule={},
         string interiorSection = "") = 0;
