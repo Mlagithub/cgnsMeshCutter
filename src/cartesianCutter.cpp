@@ -37,6 +37,37 @@ struct hash<DataType_t>
 
 namespace MeshCut
 {
+void check(bool state, string&& errStr, string&& okStr)
+{
+    if(!state)
+    {
+        if(!errStr.empty())
+        {
+            std::cerr << (errStr.c_str());
+        }
+        exit(EXIT_FAILURE);
+    }
+    else
+    {
+        if(!okStr.empty()) std::cout << (okStr.c_str());
+    }
+}
+
+void check(const int runCode, string&& errStr, string&& okStr)
+{
+    if(runCode != CG_OK)
+    {
+        if(!errStr.empty())
+        {
+            std::cerr << "ERROR: " << (errStr.c_str());
+        }
+        exit(EXIT_FAILURE);
+    }
+    else
+    {
+        if(!okStr.empty()) std::cout << (okStr.c_str());
+    }
+}
 
 static ElementType_t CellType(const int nodeCnt, const int dim)
 {
@@ -257,6 +288,105 @@ bool CartesianCutter::Face::operator<(const Face& rhs) const
     return lhsList < rhsList;
 }
 
+CartesianCutter::Weight::Weight(const int nx, const int ny, const int nz)
+{
+    weights_.emplace_back(vector<double>(nx, 1.0/nx));
+    weights_.emplace_back(vector<double>(ny, 1.0/ny));
+    weights_.emplace_back(vector<double>(nz, 1.0/nz));
+
+    updateSumWeight();
+}
+
+CartesianCutter::Weight::Weight(string fname, const int nx, const int ny, const int nz)
+{
+    std::fstream fp(fname, std::ios_base::in);
+    check(fp.is_open(), format("Can not open file: %s\n", fname.c_str()));
+    
+    auto eatALine = [&](string& line){
+        while (true)
+        {
+            std::getline(fp, line);
+
+            // empty line is suitable 
+            if(stringTrim(line).empty()) continue;
+            else break;
+        }
+        return true;
+    };
+    
+    std::unordered_map<int, string> mp{{0, "X"}, {1, "Y"}, {2, "Z"}};
+    std::unordered_map<int, int> mp2{{0, nx}, {1, ny}, {2, nz}};
+    for(auto i=0; i<3; ++i)
+    {
+        string line;
+        
+        weights_.emplace_back(vector<double>{});
+
+        check(eatALine(line), format("can not find weight value at direction %s\n", mp[i].c_str()));
+        for(auto it : stringSplit(line, " "))
+        {
+            weights_[i].push_back(std::stod(it));
+        }
+        check(weights_[i].size()==mp2[i], format("number of weight value at director %s is not correct %d!=%d, check your file: %s\n", mp[i].c_str(), mp2[i], weights_[i].size(), fname.c_str()));
+    }
+    fp.close();
+
+    normalize();
+    updateSumWeight();
+}
+
+void CartesianCutter::Weight::normalize()
+{
+    for(auto &it : weights_)
+    {
+        const auto sum = std::accumulate(it.begin(), it.end(), 0.0);
+        std::transform(it.begin(), it.end(), it.begin(), [sum](double val){ return val/sum; });
+    }
+}
+
+void CartesianCutter::Weight::updateSumWeight()
+{
+    for(auto &w : weights_)
+    {
+        sumWeights_.emplace_back(vector<double>(w.size(), 0.0));
+        auto &sumW = sumWeights_.back();
+        for(auto i=1; i<w.size(); ++i)
+        {
+            sumW[i] = sumW[i-1] + w[i-1];
+        }
+    }
+}
+
+double CartesianCutter::Weight::x(const Location& loc) const
+{
+    return weights_[0][loc.i];
+}
+
+double CartesianCutter::Weight::y(const Location& loc) const
+{
+    return weights_[1][loc.j];
+}
+
+double CartesianCutter::Weight::z(const Location& loc) const
+{
+    return weights_[2][loc.k];
+}
+
+double CartesianCutter::Weight::sumX(const Location& loc) const
+{
+    return sumWeights_[0][loc.i];
+}
+
+double CartesianCutter::Weight::sumY(const Location& loc) const
+{
+    return sumWeights_[1][loc.j];
+}
+
+double CartesianCutter::Weight::sumZ(const Location& loc) const
+{
+    return sumWeights_[2][loc.k];
+}
+
 vector<vector<cgsize_t>> CartesianCutter::allFaceInCell(const vector<cgsize_t>& idList, ElementType_t type)
 {
     check(
@@ -321,55 +451,30 @@ vector<double> CartesianCutter::boundingBoxBigMesh()
     return bbox;
 }
 
-void CartesianCutter::boundingBoxSmallMesh()
+void CartesianCutter::boundingBoxSmallMesh(string weightFilename)
 {
+    std::shared_ptr<Weight> weight;
+    if(!weightFilename.empty()) weight = std::make_shared<Weight>(Weight{weightFilename, nx_, ny_, nz_});
+    else weight = std::make_shared<Weight>(Weight{nx_, ny_, nz_});
+
     auto bbox = this->boundingBoxBigMesh();
-    auto stepI = (bbox[1] - bbox[0]) / nx_;
-    auto stepJ = (bbox[3] - bbox[2]) / ny_;
-    auto stepK = (bbox[5] - bbox[4]) / nz_;
+    const auto lenX = bbox[1] - bbox[0];
+    const auto lenY = bbox[3] - bbox[2];
+    const auto lenZ = bbox[5] - bbox[4];
 
     for (auto rank = 0; rank < n_; ++rank)
     {
         auto &box = bbox_[rank];
-        auto loc = id2Location(rank);
-        box.min_x = bbox[0] + stepI * loc.i;
-        box.max_x = bbox[0] + stepI * (loc.i+1);
-        box.min_y = bbox[2] + stepJ * loc.j;
-        box.max_y = bbox[2] + stepJ * (loc.j+1);
-        box.min_z = bbox[4] + stepK * loc.k;
-        box.max_z = bbox[4] + stepK * (loc.k+1);
-    }
-}
+        const auto loc = id2Location(rank);
 
-void CartesianCutter::check(bool state, string&& errStr, string&& okStr)
-{
-    if(!state)
-    {
-        if(!errStr.empty())
-        {
-            std::cerr << (errStr.c_str());
-        }
-        exit(EXIT_FAILURE);
-    }
-    else
-    {
-        if(!okStr.empty()) std::cout << (okStr.c_str());
-    }
-}
+        box.min_x = bbox[0] + lenX * weight->sumX(loc);
+        box.max_x = box.min_x + lenX * weight->x(loc);
 
-void CartesianCutter::check(const int runCode, string&& errStr, string&& okStr)
-{
-    if(runCode != CG_OK)
-    {
-        if(!errStr.empty())
-        {
-            std::cerr << "ERROR: " << (errStr.c_str());
-        }
-        exit(EXIT_FAILURE);
-    }
-    else
-    {
-        if(!okStr.empty()) std::cout << (okStr.c_str());
+        box.min_y = bbox[2] + lenY * weight->sumY(loc);
+        box.max_y = box.min_y + lenY * weight->y(loc);
+
+        box.min_z = bbox[4] + lenZ * weight->sumZ(loc);
+        box.max_z = box.min_z + lenZ * weight->z(loc);
     }
 }
 
@@ -581,6 +686,7 @@ void CartesianCutter::cut(
     const int nx, 
     const int ny, 
     const int nz, 
+    const string weightFilename,
     bool multiZone, 
     vector<string> fluidDomainNameRule,
     string interiorSection
@@ -601,7 +707,7 @@ void CartesianCutter::cut(
     if(!interiorFacePrefix_.empty()) check((!interiorSection_.empty()), format("can not find interior section: %s \n", interiorFacePrefix_.c_str()));
 
     // calculate bbox
-    this->boundingBoxSmallMesh();
+    this->boundingBoxSmallMesh(weightFilename);
 
     this->readNode();
     
