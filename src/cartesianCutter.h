@@ -13,6 +13,7 @@
 #include "vec.h"
 #include "meshCutter.h"
 #include "format.h"
+#include "cgFile.h"
 
 using std::set;
 using std::map;
@@ -22,24 +23,10 @@ using std::unordered_map;
 
 namespace MeshCut
 {
-static void check(const int runCode, string&& errStr="", string&& okStr="");
-
-static void check(bool state, string&& errStr="", string&& okStr="");
-
 class CartesianCutter : public MeshCutter
 {
 public:
-    void cut(
-        const std::string &mesh, 
-        const int npart, 
-        const int nx = 1, 
-        const int ny = 1, 
-        const int nz = 1, 
-        const string weightFilename = "",
-        bool multiZone = false, 
-        vector<string> fluidDomainNameRule={},
-        string interiorSection = ""
-        ) override;
+    void cut(int argc, char** argv) override;
 
     struct BoundBox
     {
@@ -195,6 +182,18 @@ private:
 
     Vector<double> cellCenter(const vector<cgsize_t>& cell, const ElementType_t type);
 
+    void cut(
+        const std::string &mesh, 
+        const int npart, 
+        const int nx = 1, 
+        const int ny = 1, 
+        const int nz = 1, 
+        const string weightFilename = "",
+        bool multiZone = false, 
+        vector<string> fluidDomainNameRule={},
+        string interiorSection = ""
+        );
+        
     bool isBodySection(const Section& section);
 
     bool isFluidDomain(const string& name, const vector<string>& fluidDomainNameRule);
