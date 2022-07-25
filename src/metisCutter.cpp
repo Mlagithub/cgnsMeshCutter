@@ -27,10 +27,10 @@ void MetisCutter::cut(int argc, char** argv)
     CmdLine cl{};
     cl.regist<std::string, CmdLine::MustOffer>("m", "mesh", "mesh file name."," ");
     cl.regist<size_t, CmdLine::MustOffer>("np", "npart", "number to be cutting."," ");
-    cl.regist<bool, CmdLine::NotMustOffer>("multizone", "multizone_mode", "switch on if mesh is multizone [on, off].", "off");
-    cl.regist<string, CmdLine::NotMustOffer>("fluid", "fluid_domain_name", "if multiZone switch on, offer comma separated fluid domain name.","");
-    cl.regist<string, CmdLine::NotMustOffer>("interior", "interior_section", "only support multizone mode","");
-    cl.regist<string, CmdLine::NotMustOffer>("weight", "weight_filename", "sub-mesh weight at x/y/z direction","");
+    // cl.regist<bool, CmdLine::NotMustOffer>("multizone", "multizone_mode", "switch on if mesh is multizone [on, off].", "off");
+    // cl.regist<string, CmdLine::NotMustOffer>("fluid", "fluid_domain_name", "if multiZone switch on, offer comma separated fluid domain name.","");
+    // cl.regist<string, CmdLine::NotMustOffer>("interior", "interior_section", "only support multizone mode","");
+    // cl.regist<string, CmdLine::NotMustOffer>("weight", "weight_filename", "sub-mesh weight at x/y/z direction","");
     cl.parse(argc, argv);
 
     this->cut(cl.get<std::string>("mesh"), cl.get<size_t>("npart"));
@@ -104,7 +104,7 @@ int MetisCutter::cut(const vector<vector<cgsize_t>>& cellToplogy, idx_t np, vect
     // metis options
     idx_t options[METIS_NOPTIONS];
     options[METIS_OPTION_PTYPE] = METIS_PTYPE_KWAY;
-    options[METIS_OPTION_OBJTYPE] = METIS_OBJTYPE_VOL;
+    options[METIS_OPTION_OBJTYPE] = METIS_OBJTYPE_CUT;
     options[METIS_OPTION_NUMBERING] = 0;
     // options[METIS_OPTION_CTYPE] = METIS_CTYPE_SHEM;
     // options[METIS_OPTION_IPTYPE] = METIS_IPTYPE_EDGE;
@@ -163,6 +163,11 @@ void MetisCutter::rwBody(const int ifile, const CGFile::Section& bigBody)
     }
     // write data
     subFile->writeSection(curS, nodeIdG2L_[ifile]);
+
+    // global info
+    auto len = curS.end - curS.start + 1;
+    subFile->writeGlobalInfo(curS, bigBody.data.size(), globalOffset_, globalOffset_+len);
+    globalOffset_ += len;
 
     // update outerface 
     this->updateOuterFace(curS, ifile);
@@ -312,6 +317,12 @@ void MetisCutter::updateOuterFace(const CGFile::Section& curS, const int ifile)
     }
 }
 
+void MetisCutter::writeGlobalInfo(const CGFile::Section& curS, const int id)
+{
+    auto len = curS.end - curS.start + 1;
+    smallMesh_[id]->writeGlobalInfo(curS, 10, globalOffset_, globalOffset_+len);
+    globalOffset_ += len;
 
+}
 
 } // namespace MeshCut

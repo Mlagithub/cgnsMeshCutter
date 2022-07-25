@@ -30,6 +30,7 @@ private:
     set<cgsize_t> nodeIds_, cellIds_;
     vector<idx_t> cellPartition_, nodePartition_;
     map<int, map<string, vector<cgsize_t>>> outerFace_;
+    cgsize_t globalOffset_ = 0;
 
 private:
     void cut(string mesh, const int np);
@@ -48,5 +49,6 @@ private:
 
     void updateOuterFace(const CGFile::Section& curS, const int id);
 
+    void writeGlobalInfo(const CGFile::Section& curS, const int id);
 };
 } // namespace MeshCut

@@ -71,6 +71,8 @@ public:
 
     void writeSection(Section &curS, const map<cgsize_t, cgsize_t>& nodeIdG2L);
 
+    void writeGlobalInfo(const Section &curS, const cgsize_t n, const cgsize_t start, const cgsize_t end);
+
 public:
     struct Section
     {

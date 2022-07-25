@@ -1,5 +1,6 @@
 #include <iostream>
 #include <numeric>
+#include <sstream>
 
 #include "format.h"
 #include "cgFile.h"
@@ -560,6 +561,18 @@ void CGFile::writeSection(Section &curS, const map<cgsize_t, cgsize_t>& nodeIdG2
     }
 
     std::cout << format("  %s: write section %s [%d: %d, %d]\n", filename_.c_str(), curS.name, curS.end-curS.start+1, curS.start, curS.end);
+}
+
+
+void CGFile::writeGlobalInfo(const Section &curS, const cgsize_t n, const cgsize_t start, const cgsize_t end)
+{
+    cg_goto(fp, 1, "Zone_t", 1, curS.name, 0, "end");
+    std::ostringstream ostr;
+    ostr << "GlobalNumber:" << n << '\n';
+    ostr << "GlobalStart:" << start << '\n';
+    ostr << "GlobalEnd:" << end << '\n';
+    auto str = ostr.str();
+    cg_descriptor_write("GlobalDomainInfo", str.c_str());
 }
 
 } // namespace MeshCut
