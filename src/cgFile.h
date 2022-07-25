@@ -25,8 +25,11 @@ void check(bool state, string&& errStr="", string&& okStr="");
 
 class CGFile
 {
-private:
+public:
+    static const unordered_map<ElementType_t, vector<vector<int>>> nodeIdToBuildFaceInCell;
     struct Section;
+
+private:
     struct Face;
     struct CellLoader;
 
@@ -34,34 +37,53 @@ public:
     CGFile(string filename, int mode = CG_MODE_READ);
 
 public:
+    static vector<vector<cgsize_t>> allFaceInCell(const vector<cgsize_t>& idList, ElementType_t type);
+
+    Section& addSection();
+
     vector<int> bodySections() const;
 
     vector<int> bdySections() const;
-    
-    void loadSection(const int id);
+
+    static ElementType_t CellType(const int nodeCnt, const int dim);
+
+    static ElementType_t CellType(const int CGNSCellTypeFalg);
+
+    Section& loadSection(const int id);
 
     vector<vector<double>> loadCoordinate(const cgsize_t rangeMin, const cgsize_t rangeMax);
 
     cgsize_t nCell() const;
 
+    void nCell(const cgsize_t ncell);
+
     cgsize_t nNode() const;
+
+    void nNode(const cgsize_t nnode);
 
     Section& section(const int id);
 
+    static string stringAFace(const vector<cgsize_t>& face);
+
     void writeCoordinate(const vector<vector<double>>& data);
 
-private:
+    void writeSection(Section &curS, const map<cgsize_t, cgsize_t>& nodeIdG2L);
+
+public:
     struct Section
     {
         int id = 1;
-        char name[33];
+        char name[33] = {0};
         ElementType_t cellType;
         cgsize_t start=1, end=1, dataSize=0;
         int nBdy=0, flag;
         vector<vector<cgsize_t>> data;
         vector<cgsize_t> offset, typeFlag;
+
+        bool isMixed() const;
     };
-    
+
+private:
     struct Face
     {
         Face(const vector<cgsize_t>& val);
@@ -80,11 +102,11 @@ private:
 
     struct CellLoader
     {
-        CellLoader(Section& curS, vector<cgsize_t>& data, vector<cgsize_t>& offset, const int fp);
+        CellLoader(Section& curS, const int fp);
         bool nextCell(vector<cgsize_t>& nodes);
         Section& curS;
-        vector<cgsize_t>& data;
-        vector<cgsize_t>& offset;
+        vector<cgsize_t> data;
+        vector<cgsize_t> offset;
         cgsize_t len;
         int npe, flag = -1;
         cgsize_t id = 0;
@@ -96,19 +118,15 @@ private:
     map<int, int> smallFiles_;
 
     int cell_dim_, ibase=1, izone=1, igrid=1, ncoords;
-    cgsize_t zoneInfo[3];
+    cgsize_t zoneInfo[3] = {0, 0, 0};
     DataType_t coordDataType_;
     vector<string> coordname_;
     
     map<int, cgsize_t> globalNumber_;
     map<int, cgsize_t> globalOffset_;
     map<int, Section> sections_;
-    map<int, map<cgsize_t, cgsize_t>> nodeIdMap_;
-    vector<vector<double>> nodesData_;
-    set<cgsize_t> nodeIdInBox_;
-    map<int, map<string, vector<cgsize_t>>> outerFace_;
     vector<int> bodySection_, bdySection_, interiorSection_;
-    vector<cgsize_t> idOffset_;
+    cgsize_t idOffset_ = 1;
 
 private:
 

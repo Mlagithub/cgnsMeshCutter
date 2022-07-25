@@ -1,4 +1,5 @@
 #include <iostream>
+#include <numeric>
 
 #include "format.h"
 #include "cgFile.h"
@@ -37,6 +38,30 @@ void check(const int runCode, string&& errStr, string&& okStr)
     }
 }
 
+// 各种单元类型每个面的节点在单元内部的编号。
+// 由于面的法向量具有方向性，这些数据在计算相关向量时需要使用。
+const unordered_map<ElementType_t, vector<vector<int>>> CGFile::nodeIdToBuildFaceInCell 
+    = {{ElementType_t::TETRA_4, {{0, 2, 1}, {0, 1, 3}, {1, 2, 3}, {2, 0, 3}}},
+        {ElementType_t::HEXA_8,
+         {{0, 3, 2, 1},
+          {0, 1, 5, 4},
+          {1, 2, 6, 5},
+          {2, 3, 7, 6},
+          {0, 4, 7, 3},
+          {4, 5, 6, 7}}},
+        {ElementType_t::PENTA_6,
+         {{0, 2, 1}, 
+          {3, 4, 1, 0},
+          {5, 2, 1, 4},
+          {2, 5, 3, 0},
+          {5, 4, 3}}},
+        {ElementType_t::PYRA_5,
+         {{0, 3, 2, 1},
+          {0, 1, 4},
+          {1, 2, 4},
+          {2, 3, 4},
+          {3, 0, 4}}}};
+
 CGFile::CGFile(string filename, int mode) : filename_(filename)
 {
     switch (mode)
@@ -56,15 +81,15 @@ CGFile::CGFile(string filename, int mode) : filename_(filename)
     }
 }
 
-CGFile::CellLoader::CellLoader(Section& curS, vector<cgsize_t>& data, vector<cgsize_t>& offset, const int fp)
-    : curS(curS), data(data), offset(offset)
+CGFile::CellLoader::CellLoader(Section& curS, const int fp)
+    : curS(curS)
 {
     cg_section_read(fp, 1, 1, curS.id, curS.name, &curS.cellType, &curS.start, &curS.end, &curS.nBdy, &curS.flag);
     cg_ElementDataSize(fp, 1, 1, curS.id, &curS.dataSize);
     len = curS.end - curS.start + 1;
     id = 0;
 
-    if(curS.cellType == CGNS_ENUMV(MIXED))
+    if(curS.isMixed())
     {
         data.assign(curS.dataSize, 0);
         offset.assign(len+1, 0);
@@ -84,7 +109,7 @@ bool CGFile::CellLoader::nextCell(vector<cgsize_t>& nodes)
     if(id>=len) return false;
 
     cgsize_t start, end;
-    if(curS.cellType == CGNS_ENUMV(MIXED))
+    if(curS.isMixed())
     {
         start = offset[id] + 1;
         end = offset[id+1];
@@ -101,6 +126,41 @@ bool CGFile::CellLoader::nextCell(vector<cgsize_t>& nodes)
     ++id;
 
     return true;
+}
+
+bool CGFile::Section::isMixed() const
+{
+    return (cellType == CGNS_ENUMV(MIXED));
+}
+
+
+
+
+
+vector<vector<cgsize_t>> CGFile::allFaceInCell(const vector<cgsize_t>& idList, ElementType_t type)
+{
+    check(
+        (CGFile::nodeIdToBuildFaceInCell.count(type)!=0),
+        format("not supported cell type %d\n", type));
+
+    vector<vector<cgsize_t>> rst;
+
+    for(auto nodes : CGFile::nodeIdToBuildFaceInCell.at(type))
+    {
+        vector<cgsize_t> face;
+        for(auto it : nodes) face.push_back(idList[it]);
+        rst.emplace_back(face);
+    }
+
+    return rst;
+}
+
+CGFile::Section& CGFile::addSection()
+{
+    int n = sections_.size();
+    sections_[n] = Section{};
+
+    return sections_[n];
 }
 
 vector<int> CGFile::bodySections() const
@@ -167,6 +227,81 @@ void CGFile::checkFile()
     }
 
     coordDataType_ = (this->precision() == 32) ? CGNS_ENUMV(RealSingle) : CGNS_ENUMV(RealDouble);
+}
+
+ElementType_t CGFile::CellType(const int nodeCnt, const int dim)
+{
+    switch (dim)
+    {
+    case 2:
+        switch (nodeCnt)
+        {
+        case 3:
+            return ElementType_t::TRI_3;
+            break;
+        case 4:
+            return ElementType_t::QUAD_4;
+            break;
+        default:
+            std::cout << format("not supported element type with[dim, nodes] [ %d, %d]\n", dim, nodeCnt);
+            break;
+        }
+        break;
+    case 3:
+        switch (nodeCnt)
+        {
+        case 4:
+            return ElementType_t::TETRA_4;
+            break;
+        case 5:
+            return ElementType_t::PYRA_5;
+            break;
+        case 6:
+            return ElementType_t::PENTA_6;
+            break;
+        case 8:
+            return ElementType_t::HEXA_8;
+            break;
+        default:
+            std::cout << format("not supported element type with[dim, nodes] [ %d, %d]\n", dim, nodeCnt);
+            break;
+        }
+        break;
+    default:
+        break;
+    }
+
+    return ElementTypeNull;
+}
+
+ElementType_t CGFile::CellType(const int CGNSCellTypeFalg)
+{
+    auto rst = ElementType_t::ElementTypeNull;
+    switch (CGNSCellTypeFalg)
+    {
+    case 5:
+        rst = ElementType_t::TRI_3;
+        break;
+    case 7:
+        rst = ElementType_t::QUAD_4;
+        break;
+    case 10:
+        rst = ElementType_t::TETRA_4;
+        break;
+    case 12:
+        rst = ElementType_t::PYRA_5;
+        break;
+    case 14:
+        rst = ElementType_t::PENTA_6;
+        break;
+    case 17:
+        rst = ElementType_t::HEXA_8;
+        break;
+    default:
+        std::cout << format("unknown element type %d\n", static_cast<ElementType_t>(CGNSCellTypeFalg));
+        break;
+    }
+    return rst;
 }
 
 bool CGFile::isBodySection(const Section& section)
@@ -242,9 +377,8 @@ vector<vector<double>> CGFile::loadCoordinate(const cgsize_t rangeMin, const cgs
         {
             vector<float> tmp;
             auto coordname = coordname_[i].c_str();
-            cg_coord_read(fp, ibase, izone, coordname, coordDataType_, &rangeMin, &rangeMax, tmp.data());
-            check(cg_coord_read(fp, ibase, izone, coordname, coordDataType_, &rangeMin, &rangeMax, data[i].data()), format("read %s\n", coordname));
-            for(auto it : tmp) data[i].push_back(it);
+            check(cg_coord_read(fp, ibase, izone, coordname, coordDataType_, &rangeMin, &rangeMax, tmp.data()), format("read %s\n", coordname));
+            for(auto id = 0; id<tmp.size(); ++id) data[i][id] = tmp[id];
         }
     }
     
@@ -267,13 +401,15 @@ void CGFile::loadCoordinateInfo()
     }
 }
 
-void CGFile::loadSection(const int id)
+CGFile::Section& CGFile::loadSection(const int id)
 {
-    int curOffset = 0;
-    vector<cgsize_t> data, offset, tmp;
     auto &curSection = sections_[id];
-    auto isMixed = (curSection.cellType == CGNS_ENUMV(MIXED));
-    auto loader = CellLoader{curSection, data, offset, fp};
+    if(!curSection.data.empty()) return curSection;
+
+    int curOffset = 0;
+    vector<cgsize_t> tmp;
+    auto isMixed = curSection.isMixed();
+    auto loader = CellLoader{curSection, fp};
     while (loader.nextCell(tmp))
     {
         curSection.data.push_back(tmp);
@@ -285,6 +421,8 @@ void CGFile::loadSection(const int id)
         }
         tmp.clear();
     }
+
+    return curSection;
 }
 
 cgsize_t CGFile::nCell() const
@@ -292,9 +430,19 @@ cgsize_t CGFile::nCell() const
     return zoneInfo[1];
 }
 
+void CGFile::nCell(const cgsize_t ncell)
+{
+    zoneInfo[1] = ncell;
+}
+
 cgsize_t CGFile::nNode() const
 {
     return zoneInfo[0];
+}
+
+void CGFile::nNode(const cgsize_t nnode)
+{
+    zoneInfo[0] = nnode;
 }
 
 int CGFile::precision()
@@ -308,6 +456,22 @@ int CGFile::precision()
 CGFile::Section& CGFile::section(const int id)
 {
     return sections_[id];
+}
+
+string CGFile::stringAFace(const vector<cgsize_t>& face)
+{
+    if(face.empty()) return "";
+    
+    set<cgsize_t> tmp;
+    for(auto it : face) tmp.insert(it);
+
+    return std::accumulate(
+        std::next(tmp.begin()), 
+        tmp.end(), 
+        std::to_string(*tmp.begin()), 
+        [](string sum, const cgsize_t id){
+            return sum + "-" + std::to_string(id);
+        });
 }
 
 void CGFile::writeCoordinate(const vector<vector<double>>& data)
@@ -333,8 +497,60 @@ void CGFile::writeCoordinate(const vector<vector<double>>& data)
     for(auto iCoord : {0, 1, 2})
     {
         const char *coordname = coordname_[iCoord].c_str();
-        check(cg_coord_write(fp, 1, 1, RealDouble, coordname, data.data(), &dummy), format("write coordinate %s\n", coordname));
+        check(cg_coord_write(fp, 1, 1, RealDouble, coordname, data[iCoord].data(), &dummy), format("write coordinate %s\n", coordname));
     }
+}
+
+void CGFile::writeSection(Section &curS, const map<cgsize_t, cgsize_t>& nodeIdG2L)
+{
+    // update id
+    curS.dataSize = std::accumulate(
+        curS.data.begin(), 
+        curS.data.end(), 
+        0, 
+        [](cgsize_t sum, vector<cgsize_t> vec){
+            return sum + vec.size();
+        });
+     
+    curS.start = idOffset_;
+    curS.end = curS.start + curS.data.size() - 1;
+    idOffset_ = curS.end + 1;   
+
+    int dummy;
+    if(curS.isMixed())
+    {
+        curS.dataSize += curS.typeFlag.size();
+        vector<cgsize_t> data(curS.dataSize, 0);
+        int icell=0, i=0;
+        for(auto it : curS.data)
+        {
+            data[i++] = curS.typeFlag[icell++];
+            for(auto j : it)
+            {
+                data[i++] = nodeIdG2L.at(j);
+            }
+        }
+        check(
+            cg_poly_section_write(fp, 1, 1, curS.name, curS.cellType, curS.start, curS.end, 0, data.data(), curS.offset.data(), &dummy),
+            format("file %s write section %s\n", filename_.c_str(), curS.name));
+    }
+    else
+    {
+        vector<cgsize_t> data(curS.dataSize);
+        int i=0;
+        for(auto it : curS.data)
+        {
+            for(auto j : it)
+            {
+                data[i++] = nodeIdG2L.at(j);
+            }
+        }
+        check(
+            cg_section_write(fp, 1, 1, curS.name, curS.cellType, curS.start, curS.end, curS.nBdy, data.data(), &dummy),
+            format("file %s write section %s\n", filename_.c_str(), curS.name));
+    }
+
+    std::cout << format("  %s: write section %s [%d: %d, %d]\n", filename_.c_str(), curS.name, curS.end-curS.start+1, curS.start, curS.end);
 }
 
 } // namespace MeshCut
