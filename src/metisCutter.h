@@ -26,7 +26,7 @@ private:
     using cgns_filetype = std::shared_ptr<CGFile>;
     cgns_filetype bigMesh_;
     vector<cgns_filetype> smallMesh_;
-    map<cgsize_t, cgsize_t> nodeIdG2L_;
+    map<int, map<cgsize_t, cgsize_t>> nodeIdG2L_;
     set<cgsize_t> nodeIds_, cellIds_;
     vector<idx_t> cellPartition_, nodePartition_;
     map<int, map<string, vector<cgsize_t>>> outerFace_;
@@ -41,6 +41,8 @@ private:
     void rwBody(const int ifile, const CGFile::Section& bigBody);
 
     void rwBoundary(const int ifile);
+
+    void rwInterface(const int ifile);
 
     void rwNode(const int ifile);
 

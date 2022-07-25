@@ -2,6 +2,7 @@
 #include <cmath>
 #include <numeric>
 #include <cstring>
+#include <fstream>
 
 #include "cmdLine.h"
 #include "metisCutter.h"
@@ -58,7 +59,7 @@ void MetisCutter::cut(string meshFilename, const int np)
         for(auto ifile=0; ifile<np; ++ifile)
         {
             // collect cell/node id of sub-mesh
-            nodeIdG2L_.clear(); // 1-base id
+            nodeIdG2L_.insert({ifile, {}}); // 1-base id
             nodeIds_.clear(); // 1-base id
             cellIds_.clear(); // 0-base id
             for(auto i=0; i<cellPartition_.size(); ++i)
@@ -68,7 +69,7 @@ void MetisCutter::cut(string meshFilename, const int np)
                 cellIds_.insert(i);
                 for(auto it : bigBody.data[i]) if(nodeIds_.count(it)==0) nodeIds_.insert(it);
             }
-            for(auto it : nodeIds_) nodeIdG2L_.insert({it, nodeIdG2L_.size()+1});
+            for(auto it : nodeIds_) nodeIdG2L_[ifile].insert({it, nodeIdG2L_[ifile].size()+1});
 
             // write coordinate
             this->rwNode(ifile);
@@ -80,8 +81,22 @@ void MetisCutter::cut(string meshFilename, const int np)
             this->rwBoundary(ifile);
 
             // write interface
+            this->rwInterface(ifile);
+
+            // clear
+            for(auto i = 0; i<=ifile; ++i)
+            {
+                if(outerFace_[i].empty())
+                {
+                    nodeIdG2L_[i].clear();
+                    smallMesh_[i]->close();
+                }
+            }
         }
     }
+
+    // clear
+    bigMesh_->close();
 }
 
 int MetisCutter::cut(const vector<vector<cgsize_t>>& cellToplogy, idx_t np, vector<idx_t>& cellPartition, vector<idx_t>& nodePartition)
@@ -147,10 +162,14 @@ void MetisCutter::rwBody(const int ifile, const CGFile::Section& bigBody)
         if (curS.isMixed()) curS.typeFlag.push_back(bigBody.typeFlag[id]);
     }
     // write data
-    subFile->writeSection(curS, nodeIdG2L_);
+    subFile->writeSection(curS, nodeIdG2L_[ifile]);
 
     // update outerface 
     this->updateOuterFace(curS, ifile);
+
+    // clear 
+    vector<vector<cgsize_t>>{}.swap(curS.data);
+    vector<cgsize_t>{}.swap(curS.offset);
 }
 
 void MetisCutter::rwBoundary(const int ifile)
@@ -183,11 +202,71 @@ void MetisCutter::rwBoundary(const int ifile)
             ++i;
         }
 
-        if(!subBdy.data.empty()) subFile->writeSection(subBdy, nodeIdG2L_);
+        if(!subBdy.data.empty()) subFile->writeSection(subBdy, nodeIdG2L_[ifile]);
 
-        // clear memory
+        // clear
         vector<vector<cgsize_t>>{}.swap(subBdy.data);
+        vector<cgsize_t>{}.swap(subBdy.offset);
     }
+}
+
+void MetisCutter::rwInterface(const int id)
+{
+    auto &subFile = smallMesh_[id];
+    auto &curOuterFace = outerFace_[id];
+
+    for(auto nbr = 0; nbr < id; ++nbr)
+    {
+        if (outerFace_[nbr].empty()) continue;
+
+        auto &nbrOuterFace = outerFace_[nbr];
+
+        set<cgsize_t> typeFlags;
+        CGFile::Section curS, nbrS;
+        for(auto face = nbrOuterFace.begin(); face!=nbrOuterFace.end();)
+        {
+            auto it = curOuterFace.find(face->first);
+            if(it != curOuterFace.end())
+            {
+                curS.data.emplace_back(it->second);
+                nbrS.data.push_back(face->second);
+
+                auto t = CGFile::CellType(it->second.size(), 2);
+                curS.typeFlag.push_back(t);
+                nbrS.typeFlag.push_back(t);
+
+                typeFlags.insert(it->second.size());
+
+                it = curOuterFace.erase(it);
+                face = nbrOuterFace.erase(face);
+            }
+            else
+            {
+                ++face;
+            }
+        }
+        if(!curS.data.empty())
+        {
+            strcpy(curS.name, format("Interface_%d_%d", 0, nbr).c_str());
+            strcpy(nbrS.name, format("Interface_%d_%d", 0, id).c_str());
+
+            if(typeFlags.size()>1){
+                curS.cellType = ElementType_t::MIXED;
+                nbrS.cellType = ElementType_t::MIXED;
+            } 
+            else if(typeFlags.size()==1){
+                auto type = (*typeFlags.begin()==3) ? ElementType_t::TRI_3 : ElementType_t::QUAD_4;
+                curS.cellType = type;
+                nbrS.cellType = type;
+            }
+            subFile->writeSection(curS, nodeIdG2L_[id]);      
+            smallMesh_[nbr]->writeSection(nbrS, nodeIdG2L_[nbr]);   
+        }
+
+        // clear
+        vector<vector<cgsize_t>>{}.swap(curS.data);
+        vector<cgsize_t>{}.swap(curS.offset);
+    } 
 }
 
 void MetisCutter::rwNode(const int ifile)

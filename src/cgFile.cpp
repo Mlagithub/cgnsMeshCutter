@@ -79,6 +79,7 @@ CGFile::CGFile(string filename, int mode) : filename_(filename)
     default:
         break;
     }
+    isOpen_ = true;
 }
 
 CGFile::CellLoader::CellLoader(Section& curS, const int fp)
@@ -186,6 +187,7 @@ void CGFile::checkFile()
     check(
         (cg_set_file_type(CG_FILE_ADF) == CG_OK && cg_open(filename_.c_str(), CG_MODE_READ, &fp) == CG_OK) || (cg_set_file_type(CG_FILE_HDF5) == CG_OK && cg_open(filename_.c_str(), CG_MODE_READ, &fp) == CG_OK), 
         format("can not open file: %s \n", filename_.c_str()));
+    isOpen_ = true;
 
     check(
         (cg_nbases(fp, &nbases), nbases==1), 
@@ -302,6 +304,13 @@ ElementType_t CGFile::CellType(const int CGNSCellTypeFalg)
         break;
     }
     return rst;
+}
+
+void CGFile::close()
+{
+    if(!isOpen_) return;
+    check(cg_close(fp), "", format("close file %s\n", filename_.c_str()));
+    isOpen_ = false;
 }
 
 bool CGFile::isBodySection(const Section& section)

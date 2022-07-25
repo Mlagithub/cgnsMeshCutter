@@ -49,6 +49,8 @@ public:
 
     static ElementType_t CellType(const int CGNSCellTypeFalg);
 
+    void close();
+
     Section& loadSection(const int id);
 
     vector<vector<double>> loadCoordinate(const cgsize_t rangeMin, const cgsize_t rangeMax);
@@ -116,6 +118,7 @@ private:
     string filename_;
     int fp;
     map<int, int> smallFiles_;
+    bool isOpen_ = false;
 
     int cell_dim_, ibase=1, izone=1, igrid=1, ncoords;
     cgsize_t zoneInfo[3] = {0, 0, 0};
