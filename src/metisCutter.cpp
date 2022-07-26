@@ -133,7 +133,12 @@ int MetisCutter::cut(const vector<vector<cgsize_t>>& cellToplogy, idx_t np, vect
     idx_t ncommon = 4;
     idx_t objval;
 
-    return METIS_PartMeshDual(&nCell, &nNode, eptr.data(), eind.data(), NULL, NULL, &ncommon, &np, NULL, options, &objval, cellPartition.data(), nodePartition.data());
+    auto rst = METIS_PartMeshDual(&nCell, &nNode, eptr.data(), eind.data(), NULL, NULL, &ncommon, &np, NULL, options, &objval, cellPartition.data(), nodePartition.data());
+
+    nodePartition.clear();
+    vector<idx_t>{}.swap(nodePartition);
+
+    return rst;
 }
 
 void MetisCutter::openToWrite(string bigFileName, const int np)
@@ -175,6 +180,7 @@ void MetisCutter::rwBody(const int ifile, const CGFile::Section& bigBody)
     // clear 
     vector<vector<cgsize_t>>{}.swap(curS.data);
     vector<cgsize_t>{}.swap(curS.offset);
+    vector<cgsize_t>{}.swap(curS.typeFlag);
 }
 
 void MetisCutter::rwBoundary(const int ifile)
@@ -212,6 +218,7 @@ void MetisCutter::rwBoundary(const int ifile)
         // clear
         vector<vector<cgsize_t>>{}.swap(subBdy.data);
         vector<cgsize_t>{}.swap(subBdy.offset);
+        vector<cgsize_t>{}.swap(subBdy.typeFlag);
     }
 }
 
@@ -271,6 +278,7 @@ void MetisCutter::rwInterface(const int id)
         // clear
         vector<vector<cgsize_t>>{}.swap(curS.data);
         vector<cgsize_t>{}.swap(curS.offset);
+        vector<cgsize_t>{}.swap(curS.typeFlag);
     } 
 }
 
@@ -322,7 +330,6 @@ void MetisCutter::writeGlobalInfo(const CGFile::Section& curS, const int id)
     auto len = curS.end - curS.start + 1;
     smallMesh_[id]->writeGlobalInfo(curS, 10, globalOffset_, globalOffset_+len);
     globalOffset_ += len;
-
 }
 
 } // namespace MeshCut

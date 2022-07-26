@@ -1,6 +1,8 @@
 #pragma once
 
 #include <memory>
+#include <unordered_map>
+#include <map>
 
 #ifdef SUPPORT_METIS
 #include <metis.h>
@@ -10,6 +12,10 @@
 
 #include "meshCutter.h"
 #include "cgFile.h"
+
+using std::map;
+using std::unordered_map;
+
 
 namespace MeshCut
 {
@@ -29,7 +35,7 @@ private:
     map<int, map<cgsize_t, cgsize_t>> nodeIdG2L_;
     set<cgsize_t> nodeIds_, cellIds_;
     vector<idx_t> cellPartition_, nodePartition_;
-    map<int, map<string, vector<cgsize_t>>> outerFace_;
+    unordered_map<int, map<string, vector<cgsize_t>>> outerFace_;
     cgsize_t globalOffset_ = 0;
 
 private:
