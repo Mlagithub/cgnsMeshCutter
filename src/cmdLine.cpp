@@ -9,7 +9,7 @@ void CmdLine::RegistHelp(void) {
     Items tmp;
     tmp.argvFlag_ = "-h";
     tmp.argvName_ = "--help";
-    tmp.argvDesc_ = "Print this help message.";
+    tmp.argvDesc_ = "print this help message.";
     tmp.isMustOffer_ = false;
     tmp.isRadioOpt_  = false;
     args_[tmp.argvFlag_] = tmp;

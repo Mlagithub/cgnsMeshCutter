@@ -19,14 +19,9 @@ MetisCutter::~MetisCutter()
 
 void MetisCutter::cut(int argc, char** argv)
 {
-#ifndef SUPPORT_METIS
-    std::cout << "Not support method: Metis\n";
-    return;
-#endif
-
     CmdLine cl{};
     cl.regist<std::string, CmdLine::MustOffer>("m", "mesh", "mesh file name."," ");
-    cl.regist<size_t, CmdLine::MustOffer>("np", "npart", "number to be cutting."," ");
+    cl.regist<size_t, CmdLine::MustOffer>("np", "npart", "part number of sub-mesh."," ");
     // cl.regist<bool, CmdLine::NotMustOffer>("multizone", "multizone_mode", "switch on if mesh is multizone [on, off].", "off");
     // cl.regist<string, CmdLine::NotMustOffer>("fluid", "fluid_domain_name", "if multiZone switch on, offer comma separated fluid domain name.","");
     // cl.regist<string, CmdLine::NotMustOffer>("interior", "interior_section", "only support multizone mode","");

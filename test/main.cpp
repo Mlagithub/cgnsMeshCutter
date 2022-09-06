@@ -14,7 +14,8 @@ using MeshCut::MetisCutter;
 int main(int argc, char** argv)
 {
     CmdLine cl{};
-    cl.regist<std::string, CmdLine::MustOffer>("t", "tool", "cutter tools [parmetis, cartesian]."," ");
+    cl.regist<std::string, CmdLine::MustOffer>("t", "tool", "cutter tools [metis, cartesian]."," ");
+    cl.regist<bool, CmdLine::NotMustOffer>("u", "usage", "pirnt usage with -t option and exit [on, off].", "off");
     cl.parse(argc, argv);
 
     std::shared_ptr<MeshCutter> cutter;
@@ -29,10 +30,11 @@ int main(int argc, char** argv)
     }
     else
     {
-        std::cout << "Not support tool: " << tool << "\n";
+        std::cout << "Not supported tool: " << tool << "\n";
         return 0;
     }
 
+    if(cl.get<bool>("usage")) argv[1] = "-h";
     cutter->cut(argc, argv);
     
     return 0;
