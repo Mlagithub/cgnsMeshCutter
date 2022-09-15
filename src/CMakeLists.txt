@@ -15,7 +15,35 @@ if(metislib)
     target_compile_definitions(${TgtLib} PUBLIC "SUPPORT_METIS")
     target_link_libraries(${TgtLib} PUBLIC ${metislib})
     target_include_directories(${TgtLib} PUBLIC "${METIS_ROOT}/include")
+elseif()
+    message(ERROR "Can not find metis.")
 endif()
+
+# ParMETIS
+set (PARMETIS_ROOT "$ENV{PARMETIS_ROOT}")
+find_library(parmetislib NAMES parmetis PATHS "${PARMETIS_ROOT}/lib" REQUIRED NO_DEFAULT_PATH)
+if(parmetislib)
+    target_compile_definitions(${TgtLib} PUBLIC "SUPPORT_PARMETIS")
+    message(STATUS "Found parmetis: " ${parmetislib})
+    target_include_directories(${TgtLib} PUBLIC "${PARMETIS_ROOT}/include")
+    target_link_libraries(${TgtLib} PUBLIC ${parmetislib})
+elseif()
+    message(ERROR "Can not find parmetis.")
+endif()
+
+
+# MPI
+find_package(MPI)
+if(MPI_FOUND)
+    message(STATUS "Found MPI_LIB: " ${MPI_CXX_LIBRARIES})
+    target_include_directories(${TgtLib} PUBLIC ${MPI_C_INCLUDE_DIRS} ${MPI_CXX_INCLUDE_DIRS})
+    target_link_libraries(${TgtLib} PUBLIC ${MPI_C_LIBRARIES} ${MPI_CXX_LIBRARIES})
+else(MPI_FOUND)
+    set (MPI_ROOT "$ENV{MPI_ROOT}")
+    find_library(mpilib NAMES mpi PATHS "${MPI_ROOT}/lib" `which mpicc`../../lib)
+    target_include_directories(${TgtLib} PUBLIC "${MPI_ROOT}/include")
+    target_link_libraries(${TgtLib} PUBLIC ${mpilib})
+endif(MPI_FOUND)
 
 target_include_directories(${TgtLib} 
 PUBLIC 
@@ -30,4 +58,5 @@ PRIVATE
     cgFile.cpp
     cartesianCutter.cpp
     metisCutter.cpp
+    mpiAdapter.cpp
 )

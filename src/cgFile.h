@@ -51,7 +51,9 @@ public:
 
     void close();
 
-    Section& loadSection(const int id);
+    string dataType(vector<string>&& nodePath);
+
+    Section& loadSection(const int id, const cgsize_t start = -1, const cgsize_t end = std::numeric_limits<cgsize_t>::max());
 
     vector<vector<double>> loadCoordinate(const cgsize_t rangeMin, const cgsize_t rangeMax);
 
@@ -106,14 +108,34 @@ private:
 
     struct CellLoader
     {
-        CellLoader(Section& curS, const int fp);
+        /**
+         * @brief Construct a new Cell Loader object
+         * 
+         * @param curS CGNS 文件结构 Section 引用
+         * @param fp 文件句柄
+         * @param lowerBound 当前 Section 的 ID 下界，包含该边界值 
+         * @param upperBound 当前 Section 的 ID 上界，包含该边界值
+         */
+        CellLoader(Section& curS, const int fp, const cgsize_t lowerBound = -1, const cgsize_t upperBound = std::numeric_limits<cgsize_t>::max());
+
+        /**
+         * @brief 将入参赋值为当前加载器构造时指定范围内的组成下一个Cell的 Node ID
+         * 
+         * @param nodes Node 列表引用
+         * @return true 赋值成功
+         * @return false 已达到末尾，nodes 不可用
+         */
         bool nextCell(vector<cgsize_t>& nodes);
+        
+        int flag = -1;
+
+    private:
         Section& curS;
         vector<cgsize_t> data;
         vector<cgsize_t> offset;
-        cgsize_t len;
-        int npe, flag = -1;
-        cgsize_t id = 0;
+        int fp, npe;
+        cgsize_t id = 0, blockSize = 0, start = 0, blockId = 0, len = 0, lowerBound = 0, upperBound = 0;
+        bool loadNextBlock();
     };
 
 private:

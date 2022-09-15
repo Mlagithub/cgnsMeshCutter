@@ -39,9 +39,11 @@ private:
     cgsize_t globalOffset_ = 0;
 
 private:
-    void cut(string mesh, const int np);
+    void cut_metis(string mesh, const int np);
+    void cut_parmetis(string mesh, const int np);
 
-    int cut(const vector<vector<idx_t>>& cellToplogy, idx_t np, vector<idx_t>& cellPartition, vector<idx_t>& nodePartition);
+    int cut_metis(const vector<vector<idx_t>>& cellToplogy, idx_t np, vector<idx_t>& cellPartition, vector<idx_t>& nodePartition);
+    int cut_parmetis(idx_t np, vector<idx_t>& elmdist, vector<idx_t>& eptr, vector<idx_t>& eind, vector<idx_t>& cellPartition);
 
     void openToWrite(string filename, const int np);
 

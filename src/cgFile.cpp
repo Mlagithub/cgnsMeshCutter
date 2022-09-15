@@ -1,9 +1,73 @@
 #include <iostream>
 #include <numeric>
 #include <sstream>
+#include <functional>
 
 #include "format.h"
 #include "cgFile.h"
+#include "mpiAdapter.h"
+
+namespace
+{
+constexpr short operator"" _cgdt(const char *type, size_t size) { return (short)((type[1] << 8) + type[0]); }
+} // namespace
+
+enum DataType : short
+{
+    // 无数据
+    MT = "MT"_cgdt,
+
+    // 32有符号位整数 -- int32_t
+    I4 = "I4"_cgdt,
+
+    // 64有符号位整数 -- int64_t
+    I8 = "I8"_cgdt,
+
+    // 32位无符号整数 -- uint32_t
+    U4 = "U4"_cgdt,
+
+    // 64位无符号整数 -- uint64_t
+    U8 = "U8"_cgdt,
+
+    // 单精度浮点数 -- float
+    R4 = "R4"_cgdt,
+
+    // 双精度浮点数 -- double
+    R8 = "R8"_cgdt,
+
+    // 有符号字符 -- char
+    C1 = "C1"_cgdt,
+
+    // 无符号字符 -- unsigned char
+    B1 = "B1"_cgdt,
+
+    // 链接
+    LK = "LK"_cgdt,
+};
+
+static std::unordered_map<DataType, std::function<void(void *&, const size_t len)>> New{{I4, [](void *&ptr, const size_t len) { ptr = new int[len]; }}, {I8, [](void *&ptr, const size_t len) { ptr = new long[len]; }}};
+
+static std::unordered_map<DataType, std::function<void(void *&)>> Delete{{I4,
+                                                                          [](void *&ptr) {
+                                                                              int *tmp = ((int *)ptr);
+                                                                              delete[] tmp;
+                                                                              ptr = nullptr;
+                                                                          }},
+                                                                         {I8, [](void *&ptr) {
+                                                                              long *tmp = ((long *)ptr);
+                                                                              delete[] tmp;
+                                                                              ptr = nullptr;
+                                                                          }}};
+
+static std::unordered_map<DataType, std::function<long(void *&, const size_t id)>> Get{{I4, [](void *&ptr, const size_t id) { return ((int *)ptr)[id]; }}, {I8, [](void *&ptr, const size_t id) { return ((long *)ptr)[id]; }}};
+
+static std::unordered_map<DataType, std::function<void(void *&, const size_t, void *&, const size_t)>> Copy{{I4, [](void *&dst, const size_t dstId, void *&src, const size_t srcId) { ((int *)dst)[dstId] = ((int *)src)[srcId]; }},
+                                                                                                            {I8, [](void *&dst, const size_t dstId, void *&src, const size_t srcId) { ((long *)dst)[dstId] = ((long *)src)[srcId]; }}};
+
+static std::unordered_map<DataType, std::function<int64_t(void *&, const size_t)>> Cast2Uint64{{I4, [](void *&src, const size_t id) -> int64_t { return int64_t(((int *)src)[id]); }}, {I8, [](void *&src, const size_t id) -> int64_t { return int64_t(((long *)src)[id]); }}};
+
+
+static cgsize_t BLOCK_LEN_EACH_LOAD = 10000;
 
 namespace MeshCut
 {
@@ -19,7 +83,7 @@ void check(bool state, string&& errStr, string&& okStr)
     }
     else
     {
-        if(!okStr.empty()) std::cout << (okStr.c_str());
+        if(!okStr.empty() && MPIAdapter::isMaster()) std::cout << (okStr.c_str());
     }
 }
 
@@ -35,7 +99,7 @@ void check(const int runCode, string&& errStr, string&& okStr)
     }
     else
     {
-        if(!okStr.empty()) std::cout << (okStr.c_str());
+        if(!okStr.empty() && MPIAdapter::isMaster()) std::cout << (okStr.c_str());
     }
 }
 
@@ -83,52 +147,71 @@ CGFile::CGFile(string filename, int mode) : filename_(filename)
     isOpen_ = true;
 }
 
-CGFile::CellLoader::CellLoader(Section& curS, const int fp)
-    : curS(curS)
+CGFile::CellLoader::CellLoader(Section& curS, const int fp, const cgsize_t lowerBd, const cgsize_t upperBd)
+    : curS(curS), fp(fp)
 {
-    cg_section_read(fp, 1, 1, curS.id, curS.name, &curS.cellType, &curS.start, &curS.end, &curS.nBdy, &curS.flag);
-    cg_ElementDataSize(fp, 1, 1, curS.id, &curS.dataSize);
-    len = curS.end - curS.start + 1;
-    id = 0;
-
-    if(curS.isMixed())
-    {
-        data.assign(curS.dataSize, 0);
-        offset.assign(len+1, 0);
-        cg_poly_elements_read(fp, 1, 1, curS.id, data.data(), offset.data(), NULL);
-    }
-    else
-    {
-        cg_npe(curS.cellType, &npe);
-        data.assign(curS.dataSize, 0);
-        cg_elements_read(fp, 1, 1, curS.id, data.data(), NULL);
-        flag = curS.cellType;
-    }
+    lowerBound = std::max(lowerBd, curS.start);
+    upperBound = std::min(upperBd, curS.end);
+    blockSize = std::min(upperBound - lowerBound + 1, BLOCK_LEN_EACH_LOAD);
+    start = lowerBound - blockSize;
+    loadNextBlock();
 }
 
 bool CGFile::CellLoader::nextCell(vector<cgsize_t>& nodes)
 {
-    if(id>=len) return false;
+    if(id>=len && !loadNextBlock()) return false;
 
-    cgsize_t start, end;
+    cgsize_t begin, end;
     if(curS.isMixed())
     {
-        start = offset[id] + 1;
+        begin = offset[id] + 1;
         end = offset[id+1];
-        flag = data[start-1];
+        flag = data[begin-1];
     }
     else
     {
-        start = npe * id;
-        end = start + npe;
+        begin = npe * id;
+        end = begin + npe;
     }
 
-    for(auto j=start; j<end; ++j) { nodes.push_back(data[j]); }
+    for(auto j=begin; j<end; ++j) { nodes.push_back(data[j]); }
 
     ++id;
 
     return true;
 }
+
+bool CGFile::CellLoader::loadNextBlock()
+{
+    if(start + blockSize>upperBound) return false;
+
+    cgsize_t curBlockDataSize = 0;
+    start += blockSize;
+    auto end = std::min(start + blockSize - 1, upperBound);
+    len = end - start + 1;
+    cg_ElementPartialSize(fp, 1, 1, curS.id, start, end, &curBlockDataSize);
+
+    vector<cgsize_t>{}.swap(data);
+    if(curS.isMixed())
+    {
+        vector<cgsize_t>{}.swap(offset);
+        data.assign(curBlockDataSize, 0);
+        offset.assign(blockSize+1, 0);
+        cg_poly_elements_partial_read(fp, 1, 1, curS.id, start, end, data.data(), offset.data(), NULL);
+    }
+    else
+    {
+        cg_npe(curS.cellType, &npe);
+        data.assign(curBlockDataSize, 0);
+        cg_elements_partial_read(fp, 1, 1, curS.id, start, end, data.data(), NULL);
+    }
+
+    ++blockId;
+    id = 0;
+
+    return true;
+}
+
 
 bool CGFile::Section::isMixed() const
 {
@@ -314,6 +397,11 @@ void CGFile::close()
     isOpen_ = false;
 }
 
+string CGFile::dataType(vector<string>&& nodePath)
+{
+    
+}
+
 bool CGFile::isBodySection(const Section& section)
 {   
     vector<cgsize_t> bodyConn, offset;
@@ -411,15 +499,16 @@ void CGFile::loadCoordinateInfo()
     }
 }
 
-CGFile::Section& CGFile::loadSection(const int id)
+CGFile::Section& CGFile::loadSection(const int id, const cgsize_t start, const cgsize_t end)
 {
     auto &curSection = sections_[id];
     if(!curSection.data.empty()) return curSection;
 
     int curOffset = 0;
     vector<cgsize_t> tmp;
+    tmp.reserve(8);
     auto isMixed = curSection.isMixed();
-    auto loader = CellLoader{curSection, fp};
+    auto loader = CellLoader{curSection, fp, start, end};
     while (loader.nextCell(tmp))
     {
         curSection.data.push_back(tmp);

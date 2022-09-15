@@ -1,6 +1,7 @@
 cmake_minimum_required(VERSION 3.0.0)
 project(CGNSMeshCutter VERSION 0.1.0)
 
+cmake_policy(SET CMP0074 NEW)
 cmake_policy(SET CMP0076 NEW)
 cmake_policy(SET CMP0079 NEW)
 
@@ -25,7 +26,6 @@ add_library(${TgtLib} STATIC "")
 set(TgtExe "cutter.exe")
 add_executable(${TgtExe} "")
 target_link_libraries(${TgtExe} PUBLIC ${TgtLib})
-target_link_libraries(${TgtExe} PUBLIC "libpthread.so")
 
 add_subdirectory(src)
 add_subdirectory(test)

@@ -14,7 +14,7 @@ using MeshCut::MetisCutter;
 int main(int argc, char** argv)
 {
     CmdLine cl{};
-    cl.regist<std::string, CmdLine::MustOffer>("t", "tool", "cutter tools [metis, cartesian]."," ");
+    cl.regist<std::string, CmdLine::MustOffer>("t", "tool", "cutter tools [metis, cartesian].", "metis");
     cl.regist<bool, CmdLine::NotMustOffer>("u", "usage", "pirnt usage with -t option and exit [on, off].", "off");
     cl.parse(argc, argv);
 
