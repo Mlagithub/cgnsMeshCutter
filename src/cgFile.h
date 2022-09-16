@@ -51,8 +51,6 @@ public:
 
     void close();
 
-    string dataType(vector<string>&& nodePath);
-
     Section& loadSection(const int id, const cgsize_t start = -1, const cgsize_t end = std::numeric_limits<cgsize_t>::max());
 
     vector<vector<double>> loadCoordinate(const cgsize_t rangeMin, const cgsize_t rangeMax);
@@ -162,6 +160,8 @@ private:
     bool isBodySection(const Section& section);
 
     void loadCoordinateInfo();
+
+    void loadCGIOInfo();
 
     int precision();
 };

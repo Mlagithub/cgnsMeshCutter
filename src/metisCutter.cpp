@@ -31,6 +31,13 @@ void MetisCutter::cut(int argc, char** argv)
     cl.parse(argc, argv);
 
     MPIAdapter::Initialize(&argc, &argv);
+#ifdef DEBUG_MODE
+    if(MPIAdapter::isParallel() && MPIAdapter::isMaster()){
+        std::cout << "DEBUG_MODE: type any char to continue\n"; 
+        auto a = std::getchar();
+    } 
+    MPIAdapter::Barrier();
+#endif
     MPIAdapter::isParallel() ? this->cut_parmetis(cl.get<std::string>("mesh"), cl.get<size_t>("npart")) : this->cut_metis(cl.get<std::string>("mesh"), cl.get<size_t>("npart"));
 }
 
@@ -152,13 +159,12 @@ void MetisCutter::cut_parmetis(string meshFilename, const int np)
             eptr[i+1] = eptr[i] + tmp.size() - beg;
         }
 
-        cellPartition_.assign(nCellThisRank, 0);
-
         check(true, "", format("ParMETIS_V3_PartMeshKway begin divide: %s\n", bigBody.name));
+        cellPartition_.assign(nCellThisRank, 0);
         check(
-            cut_parmetis(np, elmdist, eptr, eind, cellPartition_), 
+            cut_parmetis(np, elmdist, eptr, eind, cellPartition_) == METIS_OK, 
             format("Process %d: ParMETIS_V3_PartMeshKway return error while divide section: %s\n", MPIAdapter::rank(), bigBody.name), 
-            format("ParMETIS_V3_PartMeshKway done")
+            format("ParMETIS_V3_PartMeshKway done\n")
         );
     }
 }

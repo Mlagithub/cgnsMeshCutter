@@ -1,70 +1,34 @@
 #include <iostream>
 #include <numeric>
 #include <sstream>
+#include <cgns_io.h>
 #include <functional>
 
 #include "format.h"
 #include "cgFile.h"
 #include "mpiAdapter.h"
 
-namespace
-{
-constexpr short operator"" _cgdt(const char *type, size_t size) { return (short)((type[1] << 8) + type[0]); }
-} // namespace
 
-enum DataType : short
-{
-    // 无数据
-    MT = "MT"_cgdt,
+static std::unordered_map<DataType_t, std::function<void(void *&, const size_t len)>> New{{DataType_t::Integer, [](void *&ptr, const size_t len) { ptr = new int[len]; }}, {DataType_t::LongInteger, [](void *&ptr, const size_t len) { ptr = new long[len]; }}};
 
-    // 32有符号位整数 -- int32_t
-    I4 = "I4"_cgdt,
-
-    // 64有符号位整数 -- int64_t
-    I8 = "I8"_cgdt,
-
-    // 32位无符号整数 -- uint32_t
-    U4 = "U4"_cgdt,
-
-    // 64位无符号整数 -- uint64_t
-    U8 = "U8"_cgdt,
-
-    // 单精度浮点数 -- float
-    R4 = "R4"_cgdt,
-
-    // 双精度浮点数 -- double
-    R8 = "R8"_cgdt,
-
-    // 有符号字符 -- char
-    C1 = "C1"_cgdt,
-
-    // 无符号字符 -- unsigned char
-    B1 = "B1"_cgdt,
-
-    // 链接
-    LK = "LK"_cgdt,
-};
-
-static std::unordered_map<DataType, std::function<void(void *&, const size_t len)>> New{{I4, [](void *&ptr, const size_t len) { ptr = new int[len]; }}, {I8, [](void *&ptr, const size_t len) { ptr = new long[len]; }}};
-
-static std::unordered_map<DataType, std::function<void(void *&)>> Delete{{I4,
+static std::unordered_map<DataType_t, std::function<void(void *&)>> Delete{{DataType_t::Integer,
                                                                           [](void *&ptr) {
                                                                               int *tmp = ((int *)ptr);
                                                                               delete[] tmp;
                                                                               ptr = nullptr;
                                                                           }},
-                                                                         {I8, [](void *&ptr) {
+                                                                         {DataType_t::LongInteger, [](void *&ptr) {
                                                                               long *tmp = ((long *)ptr);
                                                                               delete[] tmp;
                                                                               ptr = nullptr;
                                                                           }}};
 
-static std::unordered_map<DataType, std::function<long(void *&, const size_t id)>> Get{{I4, [](void *&ptr, const size_t id) { return ((int *)ptr)[id]; }}, {I8, [](void *&ptr, const size_t id) { return ((long *)ptr)[id]; }}};
+static std::unordered_map<DataType_t, std::function<long(void *&, const size_t id)>> Get{{DataType_t::Integer, [](void *&ptr, const size_t id) { return ((int *)ptr)[id]; }}, {DataType_t::LongInteger, [](void *&ptr, const size_t id) { return ((long *)ptr)[id]; }}};
 
-static std::unordered_map<DataType, std::function<void(void *&, const size_t, void *&, const size_t)>> Copy{{I4, [](void *&dst, const size_t dstId, void *&src, const size_t srcId) { ((int *)dst)[dstId] = ((int *)src)[srcId]; }},
-                                                                                                            {I8, [](void *&dst, const size_t dstId, void *&src, const size_t srcId) { ((long *)dst)[dstId] = ((long *)src)[srcId]; }}};
+static std::unordered_map<DataType_t, std::function<void(void *&, const size_t, void *&, const size_t)>> Copy{{DataType_t::Integer, [](void *&dst, const size_t dstId, void *&src, const size_t srcId) { ((int *)dst)[dstId] = ((int *)src)[srcId]; }},
+                                                                                                            {DataType_t::LongInteger, [](void *&dst, const size_t dstId, void *&src, const size_t srcId) { ((long *)dst)[dstId] = ((long *)src)[srcId]; }}};
 
-static std::unordered_map<DataType, std::function<int64_t(void *&, const size_t)>> Cast2Uint64{{I4, [](void *&src, const size_t id) -> int64_t { return int64_t(((int *)src)[id]); }}, {I8, [](void *&src, const size_t id) -> int64_t { return int64_t(((long *)src)[id]); }}};
+static std::unordered_map<DataType_t, std::function<long(void *&, const size_t)>> Cast2cgsize_t{{DataType_t::Integer, [](void *&src, const size_t id) -> long { return cgsize_t(((int *)src)[id]); }}, {DataType_t::LongInteger, [](void *&src, const size_t id) -> long { return ((long *)src)[id]; }}};
 
 
 static cgsize_t BLOCK_LEN_EACH_LOAD = 10000;
@@ -105,7 +69,7 @@ void check(const int runCode, string&& errStr, string&& okStr)
 
 // 各种单元类型每个面的节点在单元内部的编号。
 // 由于面的法向量具有方向性，这些数据在计算相关向量时需要使用。
-const unordered_map<ElementType_t, vector<vector<int>>> CGFile::nodeIdToBuildFaceInCell 
+const unordered_map<ElementType_t, vector<vector<int>>> CGFile::nodeIdToBuildFaceInCell
     = {{ElementType_t::TETRA_4, {{0, 2, 1}, {0, 1, 3}, {1, 2, 3}, {2, 0, 3}}},
         {ElementType_t::HEXA_8,
          {{0, 3, 2, 1},
@@ -115,7 +79,7 @@ const unordered_map<ElementType_t, vector<vector<int>>> CGFile::nodeIdToBuildFac
           {0, 4, 7, 3},
           {4, 5, 6, 7}}},
         {ElementType_t::PENTA_6,
-         {{0, 2, 1}, 
+         {{0, 2, 1},
           {3, 4, 1, 0},
           {5, 2, 1, 4},
           {2, 5, 3, 0},
@@ -127,25 +91,6 @@ const unordered_map<ElementType_t, vector<vector<int>>> CGFile::nodeIdToBuildFac
           {2, 3, 4},
           {3, 0, 4}}}};
 
-CGFile::CGFile(string filename, int mode) : filename_(filename)
-{
-    switch (mode)
-    {
-    case CG_MODE_READ:
-        this->checkFile();
-        this->loadCoordinateInfo();
-        break;
-    case CG_MODE_WRITE:
-        check(cg_open(filename.c_str(), mode, &fp), format("can not open file %s to write\n", filename.c_str()));
-        coordname_.push_back("CoordinateX");
-        coordname_.push_back("CoordinateY");
-        coordname_.push_back("CoordinateZ");
-        break;
-    default:
-        break;
-    }
-    isOpen_ = true;
-}
 
 CGFile::CellLoader::CellLoader(Section& curS, const int fp, const cgsize_t lowerBd, const cgsize_t upperBd)
     : curS(curS), fp(fp)
@@ -218,9 +163,26 @@ bool CGFile::Section::isMixed() const
     return (cellType == CGNS_ENUMV(MIXED));
 }
 
-
-
-
+CGFile::CGFile(string filename, int mode) : filename_(filename)
+{
+    switch (mode)
+    {
+    case CG_MODE_READ:
+        this->checkFile();
+        // this->loadCGIOInfo();
+        this->loadCoordinateInfo();
+        break;
+    case CG_MODE_WRITE:
+        check(cg_open(filename.c_str(), mode, &fp), format("can not open file %s to write\n", filename.c_str()));
+        coordname_.push_back("CoordinateX");
+        coordname_.push_back("CoordinateY");
+        coordname_.push_back("CoordinateZ");
+        break;
+    default:
+        break;
+    }
+    isOpen_ = true;
+}
 
 vector<vector<cgsize_t>> CGFile::allFaceInCell(const vector<cgsize_t>& idList, ElementType_t type)
 {
@@ -269,12 +231,12 @@ void CGFile::checkFile()
         format("%s is not a CGNS file\n", filename_.c_str()));
 
     check(
-        (cg_set_file_type(CG_FILE_ADF) == CG_OK && cg_open(filename_.c_str(), CG_MODE_READ, &fp) == CG_OK) || (cg_set_file_type(CG_FILE_HDF5) == CG_OK && cg_open(filename_.c_str(), CG_MODE_READ, &fp) == CG_OK), 
+        (cg_set_file_type(CG_FILE_ADF) == CG_OK && cg_open(filename_.c_str(), CG_MODE_READ, &fp) == CG_OK) || (cg_set_file_type(CG_FILE_HDF5) == CG_OK && cg_open(filename_.c_str(), CG_MODE_READ, &fp) == CG_OK),
         format("can not open file: %s \n", filename_.c_str()));
     isOpen_ = true;
 
     check(
-        (cg_nbases(fp, &nbases), nbases==1), 
+        (cg_nbases(fp, &nbases), nbases==1),
         format("now only support one Base, you have %d\n", nbases));
 
     check(
@@ -284,7 +246,7 @@ void CGFile::checkFile()
     check(
         (cg_nzones(fp, ibase, &nzones), nzones==1),
         format("now only support one Zone, you have %d\n", nzones));
-    
+
     check(
         (cg_zone_type(fp, ibase, izone, &zoneType), zoneType == ZoneType_t::Unstructured),
         format("now only support UnStructured Mesh\n"));
@@ -306,7 +268,7 @@ void CGFile::checkFile()
         cg_section_read(fp, ibase, izone, iSection, section.name, &section.cellType, &section.start, &section.end, &section.nBdy, &section.flag);
         cg_ElementDataSize(fp, ibase, izone, iSection, &section.dataSize);
         if(this->isBodySection(section)) bodySection_.push_back(iSection);
-        else bdySection_.push_back(iSection); 
+        else bdySection_.push_back(iSection);
 
         sections_.insert({iSection, section});
         globalNumber_.insert({iSection, section.end-section.start+1});
@@ -397,13 +359,8 @@ void CGFile::close()
     isOpen_ = false;
 }
 
-string CGFile::dataType(vector<string>&& nodePath)
-{
-    
-}
-
 bool CGFile::isBodySection(const Section& section)
-{   
+{
     vector<cgsize_t> bodyConn, offset;
     int cell_dim;
     switch (section.cellType)
@@ -479,14 +436,14 @@ vector<vector<double>> CGFile::loadCoordinate(const cgsize_t rangeMin, const cgs
             for(auto id = 0; id<tmp.size(); ++id) data[i][id] = tmp[id];
         }
     }
-    
+
     return data;
 }
 
 void CGFile::loadCoordinateInfo()
 {
     char coordname[33];
-    cgsize_t range_min = 1, range_max = zoneInfo[0];    
+    cgsize_t range_min = 1, range_max = zoneInfo[0];
 
     cg_ncoords(fp, ibase, izone, &ncoords);
     check(cg_coord_info(fp, 1, 1, 1, &coordDataType_, coordname));
@@ -499,6 +456,56 @@ void CGFile::loadCoordinateInfo()
     }
 }
 
+void CGFile::loadCGIOInfo()
+{
+    double rootId;
+    int cgioNum;
+
+    auto getChildrenIds = [&](double parentId){
+        int numChildren, tmp;
+        vector<double> childrenIds;
+
+        cgio_number_children(cgioNum, parentId, &numChildren);
+        childrenIds.assign(numChildren, 0.0);
+        cgio_children_ids(cgioNum, parentId, 1, numChildren, &tmp, childrenIds.data());
+
+        return childrenIds;
+    };
+
+    auto lookupNodeIdByLabel = [&](double nodeId, string label)
+    {
+        char tmpLabel[CGIO_MAX_LABEL_LENGTH+1];
+        vector<double> rst;
+
+        for(auto id : getChildrenIds(nodeId))
+        {
+            cgio_get_label(cgioNum, id, tmpLabel);
+            if(string(tmpLabel) == label)
+            {
+                rst.push_back(id);
+            }
+        }
+
+        return rst;
+    };
+
+    cg_get_cgio(fp, &cgioNum);
+    cgio_get_root_id(cgioNum, &rootId);
+    auto baseId = lookupNodeIdByLabel(rootId, "CGNSBase_t");
+    auto zoneId = lookupNodeIdByLabel(baseId[0], "Zone_t");
+    auto sectionId = lookupNodeIdByLabel(zoneId[0], "Elements_t");
+
+    char name[CGIO_MAX_NAME_LENGTH+1];
+    char type[CGIO_MAX_DATATYPE_LENGTH+1];
+    for(auto id : sectionId)
+    {
+        cgio_get_name(cgioNum, id, name);
+        // sectionNodeId.insert({name, id});
+        cgio_get_data_type(cgioNum, id, type);
+        // sectionDataType.insert({name, type});
+    }
+}
+
 CGFile::Section& CGFile::loadSection(const int id, const cgsize_t start, const cgsize_t end)
 {
     auto &curSection = sections_[id];
@@ -506,7 +513,7 @@ CGFile::Section& CGFile::loadSection(const int id, const cgsize_t start, const c
 
     int curOffset = 0;
     vector<cgsize_t> tmp;
-    tmp.reserve(8);
+    // tmp.reserve(8);
     auto isMixed = curSection.isMixed();
     auto loader = CellLoader{curSection, fp, start, end};
     while (loader.nextCell(tmp))
@@ -560,14 +567,14 @@ CGFile::Section& CGFile::section(const int id)
 string CGFile::stringAFace(const vector<cgsize_t>& face)
 {
     if(face.empty()) return "";
-    
+
     set<cgsize_t> tmp;
     for(auto it : face) tmp.insert(it);
 
     return std::accumulate(
-        std::next(tmp.begin()), 
-        tmp.end(), 
-        std::to_string(*tmp.begin()), 
+        std::next(tmp.begin()),
+        tmp.end(),
+        std::to_string(*tmp.begin()),
         [](string sum, const cgsize_t id){
             return sum + "-" + std::to_string(id);
         });
@@ -579,14 +586,14 @@ void CGFile::writeCoordinate(const vector<vector<double>>& data)
 
     // base
     check(
-        cg_base_write(fp, "CGNSBASE", 3, 3, &dummy), 
+        cg_base_write(fp, "CGNSBASE", 3, 3, &dummy),
         "write base\n");
 
     // zone
     check(
         cg_zone_write(fp, 1, "ZONE", zoneInfo, Unstructured, &dummy),
         "write zone\n");
-    
+
     // grid
     check(
         cg_grid_write(fp, 1, 1, "GridCoordinates", &igrid),
@@ -604,16 +611,16 @@ void CGFile::writeSection(Section &curS, const map<cgsize_t, cgsize_t>& nodeIdG2
 {
     // update id
     curS.dataSize = std::accumulate(
-        curS.data.begin(), 
-        curS.data.end(), 
-        0, 
+        curS.data.begin(),
+        curS.data.end(),
+        0,
         [](cgsize_t sum, vector<cgsize_t> vec){
             return sum + vec.size();
         });
-     
+
     curS.start = idOffset_;
     curS.end = curS.start + curS.data.size() - 1;
-    idOffset_ = curS.end + 1;   
+    idOffset_ = curS.end + 1;
 
     int dummy;
     if(curS.isMixed())
@@ -651,7 +658,6 @@ void CGFile::writeSection(Section &curS, const map<cgsize_t, cgsize_t>& nodeIdG2
 
     std::cout << format("  %s: write section %s [%d: %d, %d]\n", filename_.c_str(), curS.name, curS.end-curS.start+1, curS.start, curS.end);
 }
-
 
 void CGFile::writeGlobalInfo(const Section &curS, const cgsize_t n, const cgsize_t start, const cgsize_t end)
 {
