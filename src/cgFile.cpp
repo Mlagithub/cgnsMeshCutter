@@ -506,10 +506,40 @@ void CGFile::loadCGIOInfo()
     }
 }
 
+CGFile::Section& CGFile::loadSection(const int id)
+{
+    auto &curSection = sections_[id];    
+    if(!curSection.data.empty()) return curSection;
+    vector<vector<cgsize_t>>{}.swap(curSection.data);
+
+    int curOffset = 0;
+    vector<cgsize_t> tmp;
+    // tmp.reserve(8);
+    auto isMixed = curSection.isMixed();
+    auto loader = CellLoader{curSection, fp, curSection.start, curSection.end};
+    while (loader.nextCell(tmp))
+    {
+        curSection.data.push_back(tmp);
+        curSection.offset.push_back(curOffset);
+        curOffset += (tmp.size() + 1);
+        if (isMixed)
+        {
+            curSection.typeFlag.push_back(loader.flag);
+        }
+        tmp.clear();
+    }
+
+    return curSection;
+}
+
 CGFile::Section& CGFile::loadSection(const int id, const cgsize_t start, const cgsize_t end)
 {
-    auto &curSection = sections_[id];
-    if(!curSection.data.empty()) return curSection;
+    auto &curSection = sections_[id];    
+    if(!curSection.data.empty() && start>=curSection.start && end <= curSection.end) return curSection;
+    vector<vector<cgsize_t>>{}.swap(curSection.data);
+
+    curSection.start = start;
+    curSection.end = end;
 
     int curOffset = 0;
     vector<cgsize_t> tmp;

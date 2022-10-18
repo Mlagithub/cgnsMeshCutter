@@ -12,6 +12,18 @@
 #include "metisCutter.h"
 #include "mpiAdapter.h"
 
+static const int LenTAG = 100, DataTAG = 1000;
+
+auto distribute = [&](const idx_t len, const int n, idx_t &nCellThisRank) {
+    vector<idx_t> dist(n + 1, 0); // same for all threads
+    {
+        auto step = (len + n - 1) / n;
+        nCellThisRank = MPIAdapter::isLast() ? len - (n - 1) * step : step;
+        MPI_Allgather(&nCellThisRank, 1, GetMPIDataType<idx_t>(), dist.data() + 1, 1, GetMPIDataType<idx_t>(), MPI_COMM_WORLD);
+        for (int iProc = 1; iProc < n + 1; ++iProc) { dist[iProc] += dist[iProc - 1]; }
+    }
+    return dist;
+};
 
 namespace MeshCut
 {
@@ -32,7 +44,7 @@ void MetisCutter::cut(int argc, char** argv)
 
     MPIAdapter::Initialize(&argc, &argv);
 #ifdef DEBUG_MODE
-    if(MPIAdapter::isParallel() && MPIAdapter::isMaster()){
+    if(!MPIAdapter::isParallel() || (MPIAdapter::isParallel() && MPIAdapter::isMaster())){
         std::cout << "DEBUG_MODE: type any char to continue\n"; 
         auto a = std::getchar();
     } 
@@ -41,12 +53,84 @@ void MetisCutter::cut(int argc, char** argv)
     MPIAdapter::isParallel() ? this->cut_parmetis(cl.get<std::string>("mesh"), cl.get<size_t>("npart")) : this->cut_metis(cl.get<std::string>("mesh"), cl.get<size_t>("npart"));
 }
 
+// collect cell id from all other threads
+vector<MetisCutter::Cell> MetisCutter::collect_subBody(const MetisCutter::DecomposeResult& decomposeResult, const vector<int>& ownerThread)
+{
+    map<int, vector<Cell>> cellInfo;
+    {
+        for (idx_t i = 0; i < decomposeResult.nCellThisRank; ++i)
+        {
+            auto partId = cellPartition_[i];
+            auto threadId = ownerThread[partId];
+            auto cellId = decomposeResult.start + i;
+            cellInfo[threadId].push_back(Cell{cellId, partId});
+        }
+    }
+    vector<idx_t>{}.swap(cellPartition_); // free
+
+    // all process collect send-recv info from all process
+    vector<long> sendInfo(SIZE, 0), recvInfo(SIZE, 0);
+    {
+        for (auto it : cellInfo)
+        {
+            if (it.first != RANK) sendInfo[it.first] += it.second.size();
+        } 
+        MPI_Alltoall(sendInfo.data(), 1, MPI_LONG, recvInfo.data(), 1, MPI_LONG, MPI_COMM_WORLD);
+    }
+
+    // send-recv data
+    MPI_Datatype cellType;
+    {
+        const int cnt = 2;
+        int blockLen[cnt] = {1, 1};
+        MPI_Aint disp[cnt] = {0, sizeof(idx_t)};
+        MPI_Datatype types[cnt] = {MPI_LONG, MPI_INT};
+        MPIAdapter::TypeStruct(cnt, blockLen, disp, types, &cellType);
+        MPIAdapter::TypeCommit(&cellType);
+    }
+    vector<MPI_Request> requests;
+    vector<MPI_Status> statuses;
+    vector<vector<Cell>> recvData;
+    // send
+    for(int i=0; i<SIZE; ++i)
+    {
+        if(sendInfo[i] != 0)
+        {
+            requests.push_back(MPI_Request{});
+            MPIAdapter::ISend(cellInfo[i].data(), cellInfo[i].size(), cellType, i, DataTAG + i, MPI_COMM_WORLD, &requests.back());
+        }
+    }
+    // recv 
+    for(int i=0; i<SIZE; ++i)
+    {
+        auto recvDataSize = recvInfo[i];
+        if(recvDataSize != 0)
+        {
+            recvData.push_back(vector<Cell>(recvDataSize, Cell{}));
+            requests.push_back(MPI_Request{});
+            MPI_Irecv(recvData.back().data(), recvDataSize, cellType, i, RANK + DataTAG, MPI_COMM_WORLD, &(requests.back()));
+        }
+    }
+    statuses.assign(requests.size(), MPI_Status{});
+    MPIAdapter::WaitAll(requests.size(), requests.data(), statuses.data());
+    requests.clear(), statuses.clear();
+
+    // update cellInfo
+    for (auto &it : recvData)
+    {
+        for (auto &jt : it) cellInfo[RANK].emplace_back(jt);
+    }
+    MPIAdapter::TypeFree(&cellType);
+
+    return cellInfo[RANK];
+}
+
 
 void MetisCutter::cut_metis(string meshFilename, const int np)
 {
     // open mesh file to read/write
     bigMesh_ = std::make_shared<CGFile>(meshFilename);
-    this->openToWrite(meshFilename, np);
+    this->openSubMeshToWrite(meshFilename, np);
 
     for(auto it : bigMesh_->bodySections())
     {
@@ -106,67 +190,58 @@ void MetisCutter::cut_metis(string meshFilename, const int np)
 
 void MetisCutter::cut_parmetis(string meshFilename, const int np)
 {
-    if(MPIAdapter::size()>np)
+    RANK = MPIAdapter::rank(), SIZE = MPIAdapter::size();
+
+    if(SIZE>np)
     {
-        if(MPIAdapter::isMaster()) std::cout << format("MPI size should not bigger than subMesh number: %d > %d", MPIAdapter::size(), np);
+        if(MPIAdapter::isMaster()) std::cout << format("MPI size should not bigger than subMesh number: %d > %d\n", SIZE, np);
 
         MPIAdapter::Finalize();
-        exit(EXIT_FAILURE);
+        exit(EXIT_SUCCESS);
     }
 
+    // open mesh file to read/write
     bigMesh_ = std::make_shared<CGFile>(meshFilename);
+    auto ownerThread = this->openSubMeshToWrite(meshFilename, np);
 
+    // handle bodysection
     for(auto it : bigMesh_->bodySections())
     {
         auto &bigBody = bigMesh_->section(it);
 
-        auto nCell = bigBody.end - bigBody.start + 1;
-        auto step = (nCell + MPIAdapter::size() - 1) / MPIAdapter::size();
-        auto nCellThisRank = MPIAdapter::isLast() ? nCell - (MPIAdapter::size()-1) * step : step;
+        // decompose body-section into np parts, 
+        // and collect subBodies belong to each process
+        auto subBody = collect_subBody(this->decompose_body(bigBody, np), ownerThread);
+        if(subBody.size()==0) continue;
 
-        vector<idx_t> elmdist(MPIAdapter::size()+1, 0); // elmdist, same for all threads
+        auto comPartId = [](const Cell& lhs, const Cell& rhs){ return lhs.partId < rhs.partId; };
+        auto comId = [](const Cell& lhs, const Cell& rhs){ return lhs.id < rhs.id; };
+        std::sort(subBody.begin(), subBody.end(), comPartId);
+        auto pos = subBody.begin();
+        while (pos != subBody.end())
         {
-            step = (nCell + MPIAdapter::size() - 1) / MPIAdapter::size();
-            nCellThisRank = MPIAdapter::isLast() ? nCell - (MPIAdapter::size()-1) * step : step;
-            MPI_Allgather(&nCellThisRank, 1, GetMPIDataType<idx_t>(), elmdist.data()+1, 1, GetMPIDataType<idx_t>(), MPI_COMM_WORLD);
-            for(int iProc = 1; iProc < MPIAdapter::size()+1; ++iProc)
+            auto lastPos = pos;
+            pos = std::upper_bound(lastPos, subBody.end(), *lastPos, comPartId);
+            std::sort(lastPos, pos, comId);
+            auto indexLB = lastPos->id, indexUB = (pos-1)->id;
+            bigMesh_->loadSection(it, indexLB, indexUB);
+            std::cout << format("Thread %d: load %d cells [%d-%d] of part %d\n", RANK, bigBody.data.size(), indexLB, indexUB, lastPos->partId);
+
+            // cell and node
+            cellIds_.clear(), nodeIds_.clear();
+            for(auto cell : subBody)
             {
-                elmdist[iProc] += elmdist[iProc-1];
+                if(cell.partId != lastPos->partId) continue;
+                auto id = cell.id;
+                cellIds_.insert(id);
+                auto offset = indexLB - bigBody.start;
+                for(auto it : bigBody.data[id - bigBody.start - offset]) if(nodeIds_.count(it)==0) nodeIds_.insert(it);
             }
+
+            this->rwNode(lastPos->partId);
         }
-        auto start = bigBody.start + elmdist[MPIAdapter::rank()];
-        auto end = start + nCellThisRank - 1;
-        auto& curS = bigMesh_->loadSection(it, start, end);
-
-        auto dataSize = std::accumulate(
-            curS.data.begin(), 
-            curS.data.end(), 
-            0, 
-            [](idx_t sum, vector<idx_t> vec){
-                return sum + vec.size();
-            });
-
-
-        idx_t dataOffset = 0, beg = curS.isMixed() ? 1 : 0;
-        std::vector<idx_t> eind(dataSize-nCellThisRank * beg, 0), eptr(nCellThisRank+1, 0);
-        for(int i=0; i < nCellThisRank; ++i)
-        {
-            auto& tmp = curS.data[i];
-            for(int j=beg; j<tmp.size(); ++j)
-            {
-                eind[dataOffset++] = tmp[j] - 1;
-            }
-            eptr[i+1] = eptr[i] + tmp.size() - beg;
-        }
-
-        check(true, "", format("ParMETIS_V3_PartMeshKway begin divide: %s\n", bigBody.name));
-        cellPartition_.assign(nCellThisRank, 0);
-        check(
-            cut_parmetis(np, elmdist, eptr, eind, cellPartition_) == METIS_OK, 
-            format("Process %d: ParMETIS_V3_PartMeshKway return error while divide section: %s\n", MPIAdapter::rank(), bigBody.name), 
-            format("ParMETIS_V3_PartMeshKway done\n")
-        );
     }
+    MPIAdapter::Barrier();
 }
 
 int MetisCutter::cut_metis(const vector<vector<cgsize_t>>& cellToplogy, idx_t np, vector<idx_t>& cellPartition, vector<idx_t>& nodePartition)
@@ -252,15 +327,52 @@ int MetisCutter::cut_parmetis(idx_t np, vector<idx_t>& elmdist, vector<idx_t>& e
     );
 }
 
-void MetisCutter::openToWrite(string bigFileName, const int np)
+MetisCutter::DecomposeResult MetisCutter::decompose_body(const CGFile::Section& bigBody, const int np)
 {
-    for (auto i = 0; i < np; ++i)
+    DecomposeResult result;
+
+    idx_t nCell = bigBody.end - bigBody.start + 1;
+    auto elmdist = distribute(nCell, SIZE, result.nCellThisRank);
+    result.start = bigBody.start + elmdist[RANK];
+    auto &curS = bigMesh_->loadSection(bigBody.id, result.start, result.start + result.nCellThisRank - 1);
+    auto dataSize = std::accumulate(curS.data.begin(), curS.data.end(), 0, [](idx_t sum, vector<idx_t> vec) { return sum + vec.size(); });
+
+    idx_t dataOffset = 0, beg = curS.isMixed() ? 1 : 0;
+    std::vector<idx_t> eind(dataSize - result.nCellThisRank * beg, 0), eptr(result.nCellThisRank + 1, 0);
+    for (int i = 0; i < result.nCellThisRank; ++i)
     {
-        char fmt[128], smallFilename[128];
-        sprintf(fmt, "%%s_%%0%dd.cgns", int(std::log10(np) + 1));
-        sprintf(smallFilename, fmt, bigFileName.substr(0, bigFileName.size() - 5).c_str(), i);
-        smallMesh_.push_back(std::make_shared<CGFile>(smallFilename, CG_MODE_WRITE));
+        auto &tmp = curS.data[i];
+        for (int j = beg; j < tmp.size(); ++j) { eind[dataOffset++] = tmp[j] - 1; }
+        eptr[i + 1] = eptr[i] + tmp.size() - beg;
     }
+    check(true, "", format("ParMETIS_V3_PartMeshKway begin divide: %s\n", bigBody.name));
+    cellPartition_.assign(result.nCellThisRank, 0);
+    check(cut_parmetis(np, elmdist, eptr, eind, cellPartition_) == METIS_OK, format("Process %d: ParMETIS_V3_PartMeshKway return error while divide section: %s\n", RANK, bigBody.name), format("ParMETIS_V3_PartMeshKway done\n"));
+
+    return result;
+}
+
+vector<int> MetisCutter::openSubMeshToWrite(string bigFileName, const int np)
+{
+    idx_t dummy;
+
+    // calculate partId collection of each thread
+    vector<int> ownerThread(np, 0);
+    {
+        auto tmp = distribute(np, SIZE, dummy);
+        for(auto i=1; i<=SIZE; ++i)
+        {
+            for(auto j=tmp[i-1]; j<tmp[i]; ++j) ownerThread[j] = i-1;
+        }
+    }
+
+    smallMesh_.assign(np, nullptr);
+    for(auto i=0; i<np; ++i)
+    {
+        if(ownerThread[i] == RANK) smallMesh_[i] = std::make_shared<CGFile>(smallMeshName(bigFileName, i, np), CG_MODE_WRITE);
+    }
+
+    return ownerThread;
 }
 
 void MetisCutter::rwBody(const int ifile, const CGFile::Section& bigBody)
@@ -271,11 +383,16 @@ void MetisCutter::rwBody(const int ifile, const CGFile::Section& bigBody)
     auto &curS = subFile->addSection();
     strcpy(curS.name, bigBody.name);
     curS.cellType = bigBody.cellType;
-    int n = 0;
+    int n = 0, curOffset = 0;
     for (auto id : cellIds_)
     {
         curS.data.emplace_back(bigBody.data[id]);
-        if (curS.isMixed()) curS.typeFlag.push_back(bigBody.typeFlag[id]);
+        if (curS.isMixed())
+        {
+            curS.typeFlag.push_back(bigBody.typeFlag[id]);
+            curS.offset.push_back(curOffset);
+            curOffset += curS.data.back().size()+1;
+        }
     }
     // write data
     subFile->writeSection(curS, nodeIdG2L_[ifile]);
@@ -415,6 +532,15 @@ void MetisCutter::rwNode(const int ifile)
         ++i;
     }
     smallMesh_[ifile]->writeCoordinate(data);
+}
+
+std::string MetisCutter::smallMeshName(string bigMeshName, const int id, const int np)
+{
+    char fmt[128], smallFilename[128];
+    sprintf(fmt, "%%s_%%0%dd.cgns", int(std::log10(np) + 1));
+    sprintf(smallFilename, fmt, bigMeshName.substr(0, bigMeshName.size() - 5).c_str(), id);
+
+    return smallFilename;
 }
 
 void MetisCutter::updateOuterFace(const CGFile::Section& curS, const int ifile)
