@@ -137,7 +137,7 @@ void MetisCutter::cut_metis(string meshFilename, const int np)
         // load data into memory from file
         auto &bigBody = bigMesh_->loadSection(it);
         
-        std::cout << format("Call METIS_V3_PartMeshKway decompose: %s\n", bigBody.name);
+        check(true, "", format("Call METIS_V3_PartMeshKway decompose: %s\n", bigBody.name));
         // cut
         check(
             cut_metis(bigBody.data, np, cellPartition_, nodePartition_) == METIS_OK,
@@ -194,7 +194,7 @@ void MetisCutter::cut_parmetis(string meshFilename, const int np)
 
     if(SIZE>np)
     {
-        if(MPIAdapter::isMaster()) std::cout << format("MPI size should not bigger than subMesh number: %d > %d\n", SIZE, np);
+        if(MPIAdapter::isMaster()) check(true, "", format("MPI size should not bigger than subMesh number: %d > %d\n", SIZE, np));
 
         MPIAdapter::Finalize();
         exit(EXIT_SUCCESS);
@@ -203,6 +203,7 @@ void MetisCutter::cut_parmetis(string meshFilename, const int np)
     // open mesh file to read/write
     bigMesh_ = std::make_shared<CGFile>(meshFilename);
     auto ownerThread = this->openSubMeshToWrite(meshFilename, np);
+    for(auto i=0; i<SIZE; ++i) if(ownerThread[i] == RANK) nodeIdG2L_.insert({i, {}});
 
     // handle bodysection
     for(auto it : bigMesh_->bodySections())
@@ -210,10 +211,11 @@ void MetisCutter::cut_parmetis(string meshFilename, const int np)
         auto &bigBody = bigMesh_->section(it);
 
         // decompose body-section into np parts, 
-        // and collect subBodies belong to each process
+        // and collect subBody belong to each process
         auto subBody = collect_subBody(this->decompose_body(bigBody, np), ownerThread);
         if(subBody.size()==0) continue;
 
+        // write coordinate
         auto comPartId = [](const Cell& lhs, const Cell& rhs){ return lhs.partId < rhs.partId; };
         auto comId = [](const Cell& lhs, const Cell& rhs){ return lhs.id < rhs.id; };
         std::sort(subBody.begin(), subBody.end(), comPartId);
@@ -225,7 +227,7 @@ void MetisCutter::cut_parmetis(string meshFilename, const int np)
             std::sort(lastPos, pos, comId);
             auto indexLB = lastPos->id, indexUB = (pos-1)->id;
             bigMesh_->loadSection(it, indexLB, indexUB);
-            std::cout << format("Thread %d: load %d cells [%d-%d] of part %d\n", RANK, bigBody.data.size(), indexLB, indexUB, lastPos->partId);
+            check(true, "", format("Thread %d: load %d cells [%d-%d] of part %d\n", RANK, indexUB-indexLB+1, indexLB, indexUB, lastPos->partId));
 
             // cell and node
             cellIds_.clear(), nodeIds_.clear();
@@ -234,12 +236,24 @@ void MetisCutter::cut_parmetis(string meshFilename, const int np)
                 if(cell.partId != lastPos->partId) continue;
                 auto id = cell.id;
                 cellIds_.insert(id);
-                auto offset = indexLB - bigBody.start;
-                for(auto it : bigBody.data[id - bigBody.start - offset]) if(nodeIds_.count(it)==0) nodeIds_.insert(it);
+                for(auto it : bigBody.data[id - indexLB]) if(nodeIds_.count(it)==0) nodeIds_.insert(it);
             }
+            if(!nodeIds_.empty()) for(auto it : nodeIds_) nodeIdG2L_[lastPos->partId].insert({it, nodeIdG2L_[lastPos->partId].size()+1});
 
             this->rwNode(lastPos->partId);
+
+            // write body
+            this->rwBody(lastPos->partId, bigBody);
+
+            // write bdy
+            this->rwBoundary(lastPos->partId);
+
+            // write interface            
         }
+
+        // clear
+        for(auto it : smallMesh_) if(it != nullptr) it->close();
+
     }
     MPIAdapter::Barrier();
 }
@@ -384,9 +398,10 @@ void MetisCutter::rwBody(const int ifile, const CGFile::Section& bigBody)
     strcpy(curS.name, bigBody.name);
     curS.cellType = bigBody.cellType;
     int n = 0, curOffset = 0;
+    cgsize_t start = *(cellIds_.begin());
     for (auto id : cellIds_)
     {
-        curS.data.emplace_back(bigBody.data[id]);
+        curS.data.emplace_back(bigBody.data[id-start]);
         if (curS.isMixed())
         {
             curS.typeFlag.push_back(bigBody.typeFlag[id]);
@@ -397,7 +412,7 @@ void MetisCutter::rwBody(const int ifile, const CGFile::Section& bigBody)
     // write data
     subFile->writeSection(curS, nodeIdG2L_[ifile]);
 
-    // global info
+    // global info  
     auto len = curS.end - curS.start + 1;
     subFile->writeGlobalInfo(curS, bigBody.data.size(), globalOffset_, globalOffset_+len);
     globalOffset_ += len;

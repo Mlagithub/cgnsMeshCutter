@@ -47,7 +47,7 @@ void check(bool state, string&& errStr, string&& okStr)
     }
     else
     {
-        if(!okStr.empty() && MPIAdapter::isMaster()) std::cout << (okStr.c_str());
+        if(!okStr.empty()) std::cout << (okStr.c_str());
     }
 }
 
@@ -63,7 +63,7 @@ void check(const int runCode, string&& errStr, string&& okStr)
     }
     else
     {
-        if(!okStr.empty() && MPIAdapter::isMaster()) std::cout << (okStr.c_str());
+        if(!okStr.empty()) std::cout << (okStr.c_str());
     }
 }
 
