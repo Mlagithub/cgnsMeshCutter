@@ -535,7 +535,7 @@ CGFile::Section& CGFile::loadSection(const int id)
 CGFile::Section& CGFile::loadSection(const int id, const cgsize_t start, const cgsize_t end)
 {
     auto &curSection = sections_[id];    
-    if(!curSection.data.empty() && start>=curSection.start && end <= curSection.end) return curSection;
+    // if(!curSection.data.empty() && start>=curSection.start && end <= curSection.end) return curSection;
     vector<vector<cgsize_t>>{}.swap(curSection.data);
 
     curSection.start = start;

@@ -38,6 +38,7 @@ private:
     vector<idx_t> cellPartition_, nodePartition_;
     unordered_map<int, map<string, vector<cgsize_t>>> outerFace_;
     cgsize_t globalOffset_ = 0;
+    set<int> ownerFile_;
     struct DecomposeResult
     {
         idx_t nCellThisRank, start;
@@ -49,6 +50,8 @@ private:
     };
 
 private:
+    void collect_interface();
+    
     vector<Cell> collect_subBody(const DecomposeResult& decomposeResult, const vector<int>& ownerThread);
 
     void cut_metis(string mesh, const int np);
@@ -76,5 +79,7 @@ private:
     void updateOuterFace(const CGFile::Section& curS, const int id);
 
     void writeGlobalInfo(const CGFile::Section& curS, const int id);
+
+    void writeInterface(const int ifile, const int np);
 };
 } // namespace MeshCut

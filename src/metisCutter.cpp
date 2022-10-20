@@ -11,6 +11,7 @@
 #include "cmdLine.h"
 #include "metisCutter.h"
 #include "mpiAdapter.h"
+#include "stringUtil.h"
 
 static const int LenTAG = 100, DataTAG = 1000;
 
@@ -51,6 +52,62 @@ void MetisCutter::cut(int argc, char** argv)
     MPIAdapter::Barrier();
 #endif
     MPIAdapter::isParallel() ? this->cut_parmetis(cl.get<std::string>("mesh"), cl.get<size_t>("npart")) : this->cut_metis(cl.get<std::string>("mesh"), cl.get<size_t>("npart"));
+}
+
+// collect interface from all other threads
+void MetisCutter::collect_interface()
+{
+    auto packInterface = [&, this]() -> std::string
+    {
+        std::string sendStr;
+        for(auto ifile : outerFace_)
+        {
+            if(ifile.second.empty()) continue;
+
+            sendStr += (std::to_string(ifile.first) + ":");
+            for(auto face : ifile.second)
+            {
+                sendStr += (face.first + ";");
+            }
+            sendStr += "#";
+        }
+
+        return sendStr;
+    };
+
+    auto unpackInterface = [&, this](const string& recvStr)
+    {
+        for(auto ifile : stringSplit(recvStr, "#"))
+        {
+            auto cur = stringSplit(ifile, ":");
+            auto nbrFile = std::stoi(cur[0]);
+            if(ownerFile_.count(nbrFile)!=0) continue;
+
+            check(true, " ", format("  Thread %d: recv %d interface of file %d\n", RANK, stringSplit(cur[1], ";").size(), nbrFile));
+
+            auto& nbrOuterface = outerFace_[nbrFile];
+            for(auto face : stringSplit(cur[1], ";"))
+            {
+                nbrOuterface.insert({face, {}});
+            }
+        }
+    };
+
+    MPIAdapter::Barrier();
+
+    string sendTmp = packInterface(), recvStr, sendStr;
+    int sendCnt = sendTmp.size();
+    vector<int> sendCnts(SIZE, sendCnt), sdisp(SIZE, 0), rdisp(SIZE, 0), recvCnt(SIZE, 0);
+
+    MPI_Alltoall(sendCnts.data(), 1, MPI_INT, recvCnt.data(), 1, MPI_INT, MPI_COMM_WORLD);
+    for(auto i=1; i<SIZE; ++i) rdisp[i] = rdisp[i-1] + recvCnt[i-1];
+    recvStr.assign(std::accumulate(recvCnt.begin(), recvCnt.end(), 0)+1, ' ');
+    for(auto i=0; i<SIZE; ++i) sendStr+=sendTmp;
+    for(auto i=1; i<SIZE; ++i) sdisp[i] = sdisp[i-1] + sendCnt;
+    MPI_Alltoallv(sendStr.data(), sendCnts.data(), sdisp.data(), MPI_CHAR, (char*)(recvStr.data()), recvCnt.data(), rdisp.data(), MPI_CHAR, MPI_COMM_WORLD);
+    
+    MPIAdapter::Barrier();
+    unpackInterface(stringTrim(recvStr));
 }
 
 // collect cell id from all other threads
@@ -203,7 +260,14 @@ void MetisCutter::cut_parmetis(string meshFilename, const int np)
     // open mesh file to read/write
     bigMesh_ = std::make_shared<CGFile>(meshFilename);
     auto ownerThread = this->openSubMeshToWrite(meshFilename, np);
-    for(auto i=0; i<SIZE; ++i) if(ownerThread[i] == RANK) nodeIdG2L_.insert({i, {}});
+    for(auto i=0; i<np; ++i) 
+    {
+        if(ownerThread[i] == RANK)
+        {
+            ownerFile_.insert(i);
+            nodeIdG2L_.insert({i, {}});
+        }
+    }
 
     // handle bodysection
     for(auto it : bigMesh_->bodySections())
@@ -227,7 +291,7 @@ void MetisCutter::cut_parmetis(string meshFilename, const int np)
             std::sort(lastPos, pos, comId);
             auto indexLB = lastPos->id, indexUB = (pos-1)->id;
             bigMesh_->loadSection(it, indexLB, indexUB);
-            check(true, "", format("Thread %d: load %d cells [%d-%d] of part %d\n", RANK, indexUB-indexLB+1, indexLB, indexUB, lastPos->partId));
+            check(true, "", format("  Thread %d: load %d cells [%d-%d] of part %d\n", RANK, indexUB-indexLB+1, indexLB, indexUB, lastPos->partId));
 
             // cell and node
             cellIds_.clear(), nodeIds_.clear();
@@ -247,9 +311,13 @@ void MetisCutter::cut_parmetis(string meshFilename, const int np)
 
             // write bdy
             this->rwBoundary(lastPos->partId);
-
-            // write interface            
         }
+
+        // collect interface
+        this->collect_interface();
+
+        // write interface
+        for(auto ifile : ownerFile_) this->writeInterface(ifile, np);
 
         // clear
         for(auto it : smallMesh_) if(it != nullptr) it->close();
@@ -404,7 +472,7 @@ void MetisCutter::rwBody(const int ifile, const CGFile::Section& bigBody)
         curS.data.emplace_back(bigBody.data[id-start]);
         if (curS.isMixed())
         {
-            curS.typeFlag.push_back(bigBody.typeFlag[id]);
+            curS.typeFlag.push_back(bigBody.typeFlag[id-start]);
             curS.offset.push_back(curOffset);
             curOffset += curS.data.back().size()+1;
         }
@@ -582,6 +650,68 @@ void MetisCutter::writeGlobalInfo(const CGFile::Section& curS, const int id)
     auto len = curS.end - curS.start + 1;
     smallMesh_[id]->writeGlobalInfo(curS, 10, globalOffset_, globalOffset_+len);
     globalOffset_ += len;
+}
+
+void MetisCutter::writeInterface(const int id, const int np)
+{
+    auto &subFile = smallMesh_[id];
+    auto &curOuterFace = outerFace_[id];
+
+    for(auto nbr = 0; nbr < np; ++nbr)
+    {
+        if (nbr == id) continue;
+        auto nbrIsOwner = ownerFile_.count(nbr) != 0;
+
+        auto &nbrOuterFace = outerFace_[nbr];
+
+        set<cgsize_t> typeFlags;
+        CGFile::Section curS, nbrS;
+        for(auto face = nbrOuterFace.begin(); face!=nbrOuterFace.end();)
+        {
+            auto it = curOuterFace.find(face->first);
+            if(it != curOuterFace.end())
+            {
+                curS.data.emplace_back(it->second);
+                auto t = CGFile::CellType(it->second.size(), 2);
+                curS.typeFlag.push_back(t);
+                typeFlags.insert(it->second.size());
+                it = curOuterFace.erase(it);
+
+                if(nbrIsOwner)
+                {
+                    nbrS.data.push_back(face->second);
+                    nbrS.typeFlag.push_back(t);
+                    face = nbrOuterFace.erase(face);
+                }
+            }
+            else
+            {
+                ++face;
+            }
+        }
+        if(!curS.data.empty())
+        {
+            strcpy(curS.name, format("Interface_%d_%d", 0, nbr).c_str());
+            if(nbrIsOwner) strcpy(nbrS.name, format("Interface_%d_%d", 0, id).c_str());
+
+            if(typeFlags.size()>1){
+                curS.cellType = ElementType_t::MIXED;
+                if(nbrIsOwner) nbrS.cellType = ElementType_t::MIXED;
+            } 
+            else if(typeFlags.size()==1){
+                auto type = (*typeFlags.begin()==3) ? ElementType_t::TRI_3 : ElementType_t::QUAD_4;
+                curS.cellType = type;
+                if(nbrIsOwner) nbrS.cellType = type;
+            }
+            subFile->writeSection(curS, nodeIdG2L_[id]);
+            if(nbrIsOwner) smallMesh_[nbr]->writeSection(nbrS, nodeIdG2L_[nbr]);   
+        }
+
+        // clear
+        vector<vector<cgsize_t>>{}.swap(curS.data);
+        vector<cgsize_t>{}.swap(curS.offset);
+        vector<cgsize_t>{}.swap(curS.typeFlag);            
+    } 
 }
 
 } // namespace MeshCut
