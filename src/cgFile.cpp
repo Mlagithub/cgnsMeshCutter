@@ -3,6 +3,7 @@
 #include <sstream>
 #include <cgns_io.h>
 #include <functional>
+#include <fstream>
 
 #include "format.h"
 #include "cgFile.h"
@@ -141,7 +142,7 @@ bool CGFile::CellLoader::loadNextBlock()
     {
         vector<cgsize_t>{}.swap(offset);
         data.assign(curBlockDataSize, 0);
-        offset.assign(blockSize+1, 0);
+        offset.assign(len+1, 0);
         cg_poly_elements_partial_read(fp, 1, 1, curS.id, start, end, data.data(), offset.data(), NULL);
     }
     else
@@ -157,10 +158,53 @@ bool CGFile::CellLoader::loadNextBlock()
     return true;
 }
 
+void CGFile::Section::addCell(const cgsize_t id, const vector<cgsize_t>& idList, const cgsize_t flag)
+{
+    data.emplace_back(idList);
+    IDMap.insert({id, IDMap.size()});
+    if(isMixed())
+    {
+        typeFlag.push_back(flag);
+        offset.push_back(offset.back() + idList.size()+1);
+    }
+}
+
+const vector<cgsize_t>& CGFile::Section::cell(const int id) const
+{
+    return data[IDMap.at(id)];
+}
+
+void CGFile::Section::clear()
+{
+    vector<vector<cgsize_t>>{}.swap(data);
+    vector<cgsize_t>{0}.swap(offset);
+    vector<cgsize_t>{}.swap(typeFlag);
+    map<cgsize_t, cgsize_t>{}.swap(IDMap);
+}
+
+cgsize_t CGFile::Section::flag(const int id) const
+{
+    return isMixed() ? typeFlag[IDMap.at(id)] : (cgsize_t)cellType;
+}
 
 bool CGFile::Section::isMixed() const
 {
     return (cellType == CGNS_ENUMV(MIXED));
+}
+
+void CGFile::Section::printToFile(string fname)
+{
+    std::fstream fp(fname, std::ios_base::out);
+    if(!fp.is_open()) std::cout << format("Can not open file %s to write\n", fname.c_str());
+
+    fp << format("Cell -> %d:[%d - %d]\n", data.size(), start, end);
+    for(auto i=0; i<data.size(); ++i)
+    {
+        for(auto it : data[i]) fp << it << ',';
+        if(isMixed()) fp << format(" => %d,%d\n", offset[i], typeFlag[i]);
+    }
+
+    fp.close();
 }
 
 CGFile::CGFile(string filename, int mode) : filename_(filename)
@@ -265,7 +309,8 @@ void CGFile::checkFile()
     for(int iSection = 1; iSection<=nSection; ++iSection)
     {
         section.id = iSection;
-        cg_section_read(fp, ibase, izone, iSection, section.name, &section.cellType, &section.start, &section.end, &section.nBdy, &section.flag);
+        int flag;
+        cg_section_read(fp, ibase, izone, iSection, section.name, &section.cellType, &section.start, &section.end, &section.nBdy, &flag);
         cg_ElementDataSize(fp, ibase, izone, iSection, &section.dataSize);
         if(this->isBodySection(section)) bodySection_.push_back(iSection);
         else bdySection_.push_back(iSection);
@@ -509,23 +554,15 @@ void CGFile::loadCGIOInfo()
 CGFile::Section& CGFile::loadSection(const int id)
 {
     auto &curSection = sections_[id];    
-    if(!curSection.data.empty()) return curSection;
-    vector<vector<cgsize_t>>{}.swap(curSection.data);
+    // if(!curSection.data.empty()) return curSection;
+    curSection.clear();
 
-    int curOffset = 0;
+    cgsize_t ID = curSection.start;
     vector<cgsize_t> tmp;
-    // tmp.reserve(8);
-    auto isMixed = curSection.isMixed();
     auto loader = CellLoader{curSection, fp, curSection.start, curSection.end};
     while (loader.nextCell(tmp))
     {
-        curSection.data.push_back(tmp);
-        curSection.offset.push_back(curOffset);
-        curOffset += (tmp.size() + 1);
-        if (isMixed)
-        {
-            curSection.typeFlag.push_back(loader.flag);
-        }
+        curSection.addCell(ID++, tmp, loader.flag);
         tmp.clear();
     }
 
@@ -534,27 +571,18 @@ CGFile::Section& CGFile::loadSection(const int id)
 
 CGFile::Section& CGFile::loadSection(const int id, const cgsize_t start, const cgsize_t end)
 {
-    auto &curSection = sections_[id];    
+    auto &curSection = sections_[id];
     // if(!curSection.data.empty() && start>=curSection.start && end <= curSection.end) return curSection;
-    vector<vector<cgsize_t>>{}.swap(curSection.data);
-
+    curSection.clear();
     curSection.start = start;
     curSection.end = end;
 
-    int curOffset = 0;
+    cgsize_t ID = start;
     vector<cgsize_t> tmp;
-    // tmp.reserve(8);
-    auto isMixed = curSection.isMixed();
     auto loader = CellLoader{curSection, fp, start, end};
     while (loader.nextCell(tmp))
     {
-        curSection.data.push_back(tmp);
-        curSection.offset.push_back(curOffset);
-        curOffset += (tmp.size() + 1);
-        if (isMixed)
-        {
-            curSection.typeFlag.push_back(loader.flag);
-        }
+        curSection.addCell(ID++, tmp, loader.flag);
         tmp.clear();
     }
 

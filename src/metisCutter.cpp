@@ -182,7 +182,6 @@ vector<MetisCutter::Cell> MetisCutter::collect_subBody(const MetisCutter::Decomp
     return cellInfo[RANK];
 }
 
-
 void MetisCutter::cut_metis(string meshFilename, const int np)
 {
     // open mesh file to read/write
@@ -212,8 +211,8 @@ void MetisCutter::cut_metis(string meshFilename, const int np)
             {
                 if (cellPartition_[i] != ifile) continue;
 
-                cellIds_.insert(i);
-                for(auto it : bigBody.data[i]) if(nodeIds_.count(it)==0) nodeIds_.insert(it);
+                cellIds_.insert(i+1);
+                for(auto it : bigBody.cell(i+1)) if(nodeIds_.count(it)==0) nodeIds_.insert(it);
             }
             for(auto it : nodeIds_) nodeIdG2L_[ifile].insert({it, nodeIdG2L_[ifile].size()+1});
 
@@ -260,69 +259,62 @@ void MetisCutter::cut_parmetis(string meshFilename, const int np)
     // open mesh file to read/write
     bigMesh_ = std::make_shared<CGFile>(meshFilename);
     auto ownerThread = this->openSubMeshToWrite(meshFilename, np);
-    for(auto i=0; i<np; ++i) 
-    {
-        if(ownerThread[i] == RANK)
-        {
-            ownerFile_.insert(i);
-            nodeIdG2L_.insert({i, {}});
-        }
-    }
 
     // handle bodysection
-    for(auto it : bigMesh_->bodySections())
-    {
-        auto &bigBody = bigMesh_->section(it);
+    auto bigBodyId = bigMesh_->bodySections()[0];
+    auto &bigBody = bigMesh_->section(bigBodyId);
 
-        // decompose body-section into np parts, 
-        // and collect subBody belong to each process
-        auto subBody = collect_subBody(this->decompose_body(bigBody, np), ownerThread);
-        if(subBody.size()==0) continue;
+    // decompose body-section into np parts, 
+    // and collect subBody belong to each process
+    auto comPartId = [](const Cell& lhs, const Cell& rhs){ return lhs.partId < rhs.partId; };
+    auto comId = [](const Cell& lhs, const Cell& rhs){ return lhs.id < rhs.id; };
+    auto subBody = collect_subBody(this->decompose_body(bigBody, np), ownerThread);
+    if(subBody.size()==0) std::cout << format("Thread %d has no subBody\n", RANK);
+    std::sort(subBody.begin(), subBody.end(), comPartId);
+    auto pos = subBody.begin();
+    while (pos != subBody.end())
+    {
+        // relad body-section
+        auto lastPos = pos;
+        const auto ifile = lastPos->partId;
+        pos = std::upper_bound(lastPos, subBody.end(), *lastPos, comPartId);
+        std::sort(lastPos, pos, comId);
+        auto indexLB = lastPos->id, indexUB = (pos-1)->id;
+        auto &curBody = bigMesh_->loadSection(bigBodyId, indexLB, indexUB);
+        // check(true, "", format("  Thread %d: load %d cells [%d-%d] of part %d\n", RANK, indexUB-indexLB+1, indexLB, indexUB, ifile));
+
+        // cell and node
+        cellIds_.clear(), nodeIds_.clear();
+        for(auto cell : subBody)
+        {
+            if(cell.partId != ifile) continue;
+            cellIds_.insert(cell.id);
+            for(auto it : curBody.cell(cell.id)) if(nodeIds_.count(it)==0) nodeIds_.insert(it);
+        }
+        nodeIdG2L_.insert({ifile, {}});
+        if(!nodeIds_.empty()) for(auto it : nodeIds_) nodeIdG2L_[ifile].insert({it, nodeIdG2L_[ifile].size()+1});
 
         // write coordinate
-        auto comPartId = [](const Cell& lhs, const Cell& rhs){ return lhs.partId < rhs.partId; };
-        auto comId = [](const Cell& lhs, const Cell& rhs){ return lhs.id < rhs.id; };
-        std::sort(subBody.begin(), subBody.end(), comPartId);
-        auto pos = subBody.begin();
-        while (pos != subBody.end())
-        {
-            auto lastPos = pos;
-            pos = std::upper_bound(lastPos, subBody.end(), *lastPos, comPartId);
-            std::sort(lastPos, pos, comId);
-            auto indexLB = lastPos->id, indexUB = (pos-1)->id;
-            bigMesh_->loadSection(it, indexLB, indexUB);
-            check(true, "", format("  Thread %d: load %d cells [%d-%d] of part %d\n", RANK, indexUB-indexLB+1, indexLB, indexUB, lastPos->partId));
+        this->rwNode(ifile);
 
-            // cell and node
-            cellIds_.clear(), nodeIds_.clear();
-            for(auto cell : subBody)
-            {
-                if(cell.partId != lastPos->partId) continue;
-                auto id = cell.id;
-                cellIds_.insert(id);
-                for(auto it : bigBody.data[id - indexLB]) if(nodeIds_.count(it)==0) nodeIds_.insert(it);
-            }
-            if(!nodeIds_.empty()) for(auto it : nodeIds_) nodeIdG2L_[lastPos->partId].insert({it, nodeIdG2L_[lastPos->partId].size()+1});
+        // write body
+        this->rwBody(ifile, curBody);
 
-            this->rwNode(lastPos->partId);
-
-            // write body
-            this->rwBody(lastPos->partId, bigBody);
-
-            // write bdy
-            this->rwBoundary(lastPos->partId);
-        }
-
-        // collect interface
-        this->collect_interface();
-
-        // write interface
-        for(auto ifile : ownerFile_) this->writeInterface(ifile, np);
-
-        // clear
-        for(auto it : smallMesh_) if(it != nullptr) it->close();
-
+        // write bdy
+        this->rwBoundary(ifile);
     }
+
+    // collect interface
+    this->collect_interface();
+
+    // write interface
+    for(auto ifile : ownerFile_) this->writeInterface(ifile, np);
+
+    // clear
+    bigMesh_->close();
+    for(auto it : smallMesh_) if(it != nullptr) it->close();
+
+    
     MPIAdapter::Barrier();
 }
 
@@ -409,21 +401,21 @@ int MetisCutter::cut_parmetis(idx_t np, vector<idx_t>& elmdist, vector<idx_t>& e
     );
 }
 
-MetisCutter::DecomposeResult MetisCutter::decompose_body(const CGFile::Section& bigBody, const int np)
+MetisCutter::DecomposeResult MetisCutter::decompose_body(CGFile::Section& bigBody, const int np)
 {
     DecomposeResult result;
 
     idx_t nCell = bigBody.end - bigBody.start + 1;
     auto elmdist = distribute(nCell, SIZE, result.nCellThisRank);
     result.start = bigBody.start + elmdist[RANK];
-    auto &curS = bigMesh_->loadSection(bigBody.id, result.start, result.start + result.nCellThisRank - 1);
-    auto dataSize = std::accumulate(curS.data.begin(), curS.data.end(), 0, [](idx_t sum, vector<idx_t> vec) { return sum + vec.size(); });
+    bigMesh_->loadSection(bigBody.id, result.start, result.start + result.nCellThisRank - 1);
+    auto dataSize = std::accumulate(bigBody.data.begin(), bigBody.data.end(), 0, [](idx_t sum, vector<idx_t> vec) { return sum + vec.size(); });
 
-    idx_t dataOffset = 0, beg = curS.isMixed() ? 1 : 0;
+    idx_t dataOffset = 0, beg = bigBody.isMixed() ? 1 : 0;
     std::vector<idx_t> eind(dataSize - result.nCellThisRank * beg, 0), eptr(result.nCellThisRank + 1, 0);
     for (int i = 0; i < result.nCellThisRank; ++i)
     {
-        auto &tmp = curS.data[i];
+        auto &tmp = bigBody.data[i];
         for (int j = beg; j < tmp.size(); ++j) { eind[dataOffset++] = tmp[j] - 1; }
         eptr[i + 1] = eptr[i] + tmp.size() - beg;
     }
@@ -451,7 +443,11 @@ vector<int> MetisCutter::openSubMeshToWrite(string bigFileName, const int np)
     smallMesh_.assign(np, nullptr);
     for(auto i=0; i<np; ++i)
     {
-        if(ownerThread[i] == RANK) smallMesh_[i] = std::make_shared<CGFile>(smallMeshName(bigFileName, i, np), CG_MODE_WRITE);
+        if(ownerThread[i] == RANK)
+        {
+            smallMesh_[i] = std::make_shared<CGFile>(smallMeshName(bigFileName, i, np), CG_MODE_WRITE);
+            ownerFile_.insert(i);
+        } 
     }
 
     return ownerThread;
@@ -465,18 +461,11 @@ void MetisCutter::rwBody(const int ifile, const CGFile::Section& bigBody)
     auto &curS = subFile->addSection();
     strcpy(curS.name, bigBody.name);
     curS.cellType = bigBody.cellType;
-    int n = 0, curOffset = 0;
-    cgsize_t start = *(cellIds_.begin());
     for (auto id : cellIds_)
     {
-        curS.data.emplace_back(bigBody.data[id-start]);
-        if (curS.isMixed())
-        {
-            curS.typeFlag.push_back(bigBody.typeFlag[id-start]);
-            curS.offset.push_back(curOffset);
-            curOffset += curS.data.back().size()+1;
-        }
+        curS.addCell(id, bigBody.cell(id), bigBody.flag(id));
     }
+
     // write data
     subFile->writeSection(curS, nodeIdG2L_[ifile]);
 
@@ -506,22 +495,16 @@ void MetisCutter::rwBoundary(const int ifile)
         strcpy(subBdy.name, bigBdy.name);
         subBdy.cellType = bigBdy.cellType;
 
-        int curOffset = 0, i=0;
-        for(auto face : bigBdy.data)
+        cgsize_t ID = bigBdy.start;
+        for(auto i = bigBdy.start; i<=bigBdy.end; ++i)
         {
+            auto face = bigBdy.cell(i);
             auto faceStr = CGFile::stringAFace(face);
             if(curOuterFace.find(faceStr) != curOuterFace.end())
             {
                 curOuterFace.erase(faceStr);
-                subBdy.data.emplace_back(face);
-                if(bigBdy.isMixed())
-                {
-                    subBdy.typeFlag.push_back(bigBdy.typeFlag[i]);
-                    subBdy.offset.push_back(curOffset);
-                    curOffset += (face.size() + 1);
-                }
+                subBdy.addCell(ID++, face, bigBdy.flag(i));
             }
-            ++i;
         }
 
         if(!subBdy.data.empty()) subFile->writeSection(subBdy, nodeIdG2L_[ifile]);
@@ -576,6 +559,13 @@ void MetisCutter::rwInterface(const int id)
             if(typeFlags.size()>1){
                 curS.cellType = ElementType_t::MIXED;
                 nbrS.cellType = ElementType_t::MIXED;
+                auto curOffset = 0;
+                for(auto it : curS.data)
+                {
+                    curS.offset.push_back(curOffset);
+                    nbrS.offset.push_back(curOffset);
+                    curOffset += it.size()+1;
+                }
             } 
             else if(typeFlags.size()==1){
                 auto type = (*typeFlags.begin()==3) ? ElementType_t::TRI_3 : ElementType_t::QUAD_4;

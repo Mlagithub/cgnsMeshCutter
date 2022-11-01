@@ -80,12 +80,18 @@ public:
         int id = 1;
         char name[33] = {0};
         ElementType_t cellType;
-        cgsize_t start=-1, end=-1, dataSize=0;
-        int nBdy=0, flag;
+        cgsize_t start=1, end=1, dataSize=0;
+        int nBdy=0;
         vector<vector<cgsize_t>> data;
-        vector<cgsize_t> offset, typeFlag;
+        vector<cgsize_t> offset{0}, typeFlag;
+        map<cgsize_t, cgsize_t> IDMap;
 
+        void addCell(const cgsize_t id, const vector<cgsize_t>& idList, const cgsize_t flag = CG_Null);
+        void clear();
+        const vector<cgsize_t>& cell(const int id) const;
+        cgsize_t flag(const int id) const;
         bool isMixed() const;
+        void printToFile(string fname);
     };
 
 private:
@@ -126,7 +132,7 @@ private:
          */
         bool nextCell(vector<cgsize_t>& nodes);
         
-        int flag = -1;
+        int flag = CG_Null;
 
     private:
         Section& curS;
