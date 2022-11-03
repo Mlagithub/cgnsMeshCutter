@@ -62,7 +62,7 @@ private:
 
     int cut_parmetis(idx_t np, vector<idx_t>& elmdist, vector<idx_t>& eptr, vector<idx_t>& eind, vector<idx_t>& cellPartition);
 
-    DecomposeResult decompose_body(CGFile::Section& bigBody, const int np);
+    DecomposeResult decompose_body(const CGFile::Section& bigBody, const int np);
 
     vector<int> openSubMeshToWrite(string filename, const int np);
 

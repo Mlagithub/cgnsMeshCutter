@@ -41,9 +41,9 @@ public:
 
     Section& addSection();
 
-    vector<int> bodySections() const;
+    const vector<int>& bodySectionIdList() const;
 
-    vector<int> bdySections() const;
+    const vector<int>& bdySectionIdList() const;
 
     static ElementType_t CellType(const int nodeCnt, const int dim);
 
@@ -51,10 +51,15 @@ public:
 
     void close();
 
-    Section& loadSection(const int id);
-    Section& loadSection(const int id, const cgsize_t start, const cgsize_t end);
-
     vector<vector<double>> loadCoordinate(const cgsize_t rangeMin, const cgsize_t rangeMax);
+    
+    Section& loadSection(const int id);
+
+    Section& loadSection(const int id, const cgsize_t start, const cgsize_t end);
+        
+    Section loadSection(const vector<int> idList);
+
+    Section loadSection(const vector<int> idList, const cgsize_t start, const cgsize_t end);
 
     cgsize_t nCell() const;
 
@@ -92,6 +97,7 @@ public:
         cgsize_t flag(const int id) const;
         bool isMixed() const;
         void printToFile(string fname);
+        Section subSection(const cgsize_t beg, const cgsize_t end);
     };
 
 private:

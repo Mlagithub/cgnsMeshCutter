@@ -4,6 +4,7 @@
 #include <cgns_io.h>
 #include <functional>
 #include <fstream>
+#include <cstring>
 
 #include "format.h"
 #include "cgFile.h"
@@ -107,6 +108,8 @@ bool CGFile::CellLoader::nextCell(vector<cgsize_t>& nodes)
 {
     if(id>=len && !loadNextBlock()) return false;
 
+    nodes.clear();
+
     cgsize_t begin, end;
     if(curS.isMixed())
     {
@@ -162,11 +165,8 @@ void CGFile::Section::addCell(const cgsize_t id, const vector<cgsize_t>& idList,
 {
     data.emplace_back(idList);
     IDMap.insert({id, IDMap.size()});
-    if(isMixed())
-    {
-        typeFlag.push_back(flag);
-        offset.push_back(offset.back() + idList.size()+1);
-    }
+    typeFlag.push_back(flag);
+    offset.push_back(offset.back() + idList.size()+1);
 }
 
 const vector<cgsize_t>& CGFile::Section::cell(const int id) const
@@ -205,6 +205,23 @@ void CGFile::Section::printToFile(string fname)
     }
 
     fp.close();
+}
+
+CGFile::Section CGFile::Section::subSection(const cgsize_t beg, const cgsize_t end)
+{
+    Section rst;
+
+    rst.cellType = this->cellType;
+    memcpy(rst.name, this->name, 32);
+    rst.start = beg, rst.end = end;
+    rst.nBdy = this->nBdy;
+
+    for(auto id = beg; id<=end; ++id)
+    {
+        rst.addCell(id, this->cell(id), this->flag(id));
+    }
+
+    return rst;
 }
 
 CGFile::CGFile(string filename, int mode) : filename_(filename)
@@ -254,12 +271,12 @@ CGFile::Section& CGFile::addSection()
     return sections_[n];
 }
 
-vector<int> CGFile::bodySections() const
+const vector<int>& CGFile::bodySectionIdList() const
 {
     return bodySection_;
 }
 
-vector<int> CGFile::bdySections() const
+const vector<int>& CGFile::bdySectionIdList() const
 {
     return bdySection_;
 }
@@ -563,7 +580,6 @@ CGFile::Section& CGFile::loadSection(const int id)
     while (loader.nextCell(tmp))
     {
         curSection.addCell(ID++, tmp, loader.flag);
-        tmp.clear();
     }
 
     return curSection;
@@ -583,10 +599,67 @@ CGFile::Section& CGFile::loadSection(const int id, const cgsize_t start, const c
     while (loader.nextCell(tmp))
     {
         curSection.addCell(ID++, tmp, loader.flag);
-        tmp.clear();
     }
 
     return curSection;
+}
+
+CGFile::Section CGFile::loadSection(const vector<int> idList)
+{
+    Section curS;
+    vector<cgsize_t> tmp;
+    string name;
+    set<ElementType_t> types;
+
+    for(auto bodyId : idList)
+    {
+        auto &curBody = sections_[bodyId];
+        curBody.clear();
+        cgsize_t ID = curBody.start;
+        name += (curBody.name + string("_"));
+        curS.start = std::min(curS.start, curBody.start);
+        curS.end = std::max(curS.end, curBody.end);
+        types.insert(curBody.cellType);
+        auto loader = CellLoader{curBody, fp, curBody.start, curBody.end};
+        while (loader.nextCell(tmp))
+        {
+            curS.addCell(ID++, tmp, loader.flag);
+        }
+    }
+    std::memcpy(curS.name, name.c_str(), std::min((size_t)31, name.rfind('_')));
+    curS.cellType = types.size() == 1 ? *types.begin() : ElementType_t::MIXED;
+
+    return curS;
+}
+
+CGFile::Section CGFile::loadSection(const vector<int> idList, const cgsize_t start, const cgsize_t end)
+{
+    Section curS;
+    vector<cgsize_t> tmp;
+    string name;
+    set<ElementType_t> types;
+    curS.start = start;
+    curS.end = end;
+    cgsize_t ID = start;
+
+    for(auto bodyId : idList)
+    {
+        auto &curBody = sections_[bodyId];
+        if(curBody.start>end || curBody.end<start) continue;
+        
+        curBody.clear();
+        name += (curBody.name + string("_"));
+        types.insert(curBody.cellType);
+        auto loader = CellLoader{curBody, fp, std::max(start, curBody.start), std::min(end, curBody.end)};
+        while (loader.nextCell(tmp))
+        {
+            curS.addCell(ID++, tmp, loader.flag);
+        }
+    }
+    std::memcpy(curS.name, name.c_str(), std::min((size_t)31, name.rfind('_')));
+    curS.cellType = types.size() == 1 ? *types.begin() : ElementType_t::MIXED;
+
+    return curS;
 }
 
 cgsize_t CGFile::nCell() const
