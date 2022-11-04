@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <iostream>
 #include <numeric>
 #include <sstream>
@@ -271,14 +272,36 @@ CGFile::Section& CGFile::addSection()
     return sections_[n];
 }
 
+CGFile::Section CGFile::bodySection()
+{
+    Section rst;
+    string name;
+    set<ElementType_t> types;
+    vector<cgsize_t> startFlag;
+
+    for(auto it : bodySectionIDList_)
+    {
+        auto &curS = sections_[it];
+        name += (curS.name + string("_"));
+        startFlag.push_back(curS.start);
+        rst.end = std::max(rst.end, curS.end);
+        types.insert(curS.cellType);
+    }
+    rst.start = *(std::min_element(startFlag.begin(), startFlag.end()));
+    std::memcpy(rst.name, name.c_str(), std::min((size_t)31, name.rfind('_')));
+    rst.cellType = types.size() == 1 ? *types.begin() : ElementType_t::MIXED;
+
+    return rst;
+}
+
 const vector<int>& CGFile::bodySectionIdList() const
 {
-    return bodySection_;
+    return bodySectionIDList_;
 }
 
 const vector<int>& CGFile::bdySectionIdList() const
 {
-    return bdySection_;
+    return bdySectionIDList_;
 }
 
 void CGFile::checkFile()
@@ -329,8 +352,8 @@ void CGFile::checkFile()
         int flag;
         cg_section_read(fp, ibase, izone, iSection, section.name, &section.cellType, &section.start, &section.end, &section.nBdy, &flag);
         cg_ElementDataSize(fp, ibase, izone, iSection, &section.dataSize);
-        if(this->isBodySection(section)) bodySection_.push_back(iSection);
-        else bdySection_.push_back(iSection);
+        if(this->isBodySection(section)) bodySectionIDList_.push_back(iSection);
+        else bdySectionIDList_.push_back(iSection);
 
         sections_.insert({iSection, section});
         globalNumber_.insert({iSection, section.end-section.start+1});

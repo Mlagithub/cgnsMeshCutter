@@ -259,7 +259,7 @@ void MetisCutter::cut_parmetis(string meshFilename, const int np)
     auto ownerThread = this->openSubMeshToWrite(meshFilename, np);
 
     // handle bodysection
-    auto bigBody = bigMesh_->loadSection(bigMesh_->bodySectionIdList());
+    auto bigBody = bigMesh_->bodySection();
 
     // decompose body-section into np parts, 
     // and collect subBody belong to each process
@@ -271,13 +271,13 @@ void MetisCutter::cut_parmetis(string meshFilename, const int np)
     auto pos = subBody.begin();
     while (pos != subBody.end())
     {
-        // relad body-section
+        // relod body-section
         auto lastPos = pos;
         const auto ifile = lastPos->partId;
         pos = std::upper_bound(lastPos, subBody.end(), *lastPos, comPartId);
         std::sort(lastPos, pos, comId);
         auto indexLB = lastPos->id, indexUB = (pos-1)->id;
-        auto curBody = bigBody.subSection(indexLB, indexUB);
+        auto curBody = bigMesh_->loadSection(bigMesh_->bodySectionIdList(), indexLB, indexUB);
         // check(true, "", format("  Thread %d: load %d cells [%d-%d] of part %d\n", RANK, indexUB-indexLB+1, indexLB, indexUB, ifile));
 
         // cell and node
@@ -403,19 +403,20 @@ MetisCutter::DecomposeResult MetisCutter::decompose_body(const CGFile::Section& 
 {
     DecomposeResult result;
 
-    idx_t nCell = bigBody.end - bigBody.start + 1;
-    auto elmdist = distribute(nCell, SIZE, result.nCellThisRank);
+    auto elmdist = distribute(bigBody.end - bigBody.start + 1, SIZE, result.nCellThisRank);
     result.start = bigBody.start + elmdist[RANK];
 
+    auto shareBigbody = bigMesh_->loadSection(bigMesh_->bodySectionIdList(), result.start, result.start+result.nCellThisRank-1);
+
     std::vector<idx_t> eind, eptr{0};
-    idx_t beg = bigBody.isMixed() ? 1 : 0;
+    idx_t beg = shareBigbody.isMixed() ? 1 : 0;
     for (auto id = result.start; id < result.start + result.nCellThisRank; ++id)
     {
-        auto &tmp = bigBody.cell(id);
+        auto &tmp = shareBigbody.cell(id);
         for (int j = beg; j < tmp.size(); ++j) { eind.push_back(tmp[j] - 1); }
         eptr.push_back(eptr.back()+tmp.size()-beg);
     }
-    check(true, "", format("ParMETIS_V3_PartMeshKway begin divide: %s\n", bigBody.name));
+    check(true, "", format("ParMETIS_V3_PartMeshKway begin divide: %s\n", shareBigbody.name));
     cellPartition_.assign(result.nCellThisRank, 0);
     check(cut_parmetis(np, elmdist, eptr, eind, cellPartition_) == METIS_OK, format("Process %d: ParMETIS_V3_PartMeshKway return error while divide section: %s\n", RANK, bigBody.name), format("ParMETIS_V3_PartMeshKway done\n"));
 
@@ -453,7 +454,7 @@ void MetisCutter::rwBody(const int ifile, const CGFile::Section& bigBody)
 {
     auto &subFile = smallMesh_[ifile];
 
-    // new a section
+    // new a sectionk
     auto &curS = subFile->addSection();
     strcpy(curS.name, bigBody.name);
     curS.cellType = bigBody.cellType;
@@ -504,9 +505,7 @@ void MetisCutter::rwBoundary(const int ifile)
         if(!subBdy.data.empty()) subFile->writeSection(subBdy, nodeIdG2L_[ifile]);
 
         // clear
-        vector<vector<cgsize_t>>{}.swap(subBdy.data);
-        vector<cgsize_t>{}.swap(subBdy.offset);
-        vector<cgsize_t>{}.swap(subBdy.typeFlag);
+        subBdy.clear();
     }
 }
 

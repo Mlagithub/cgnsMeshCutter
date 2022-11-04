@@ -41,6 +41,8 @@ public:
 
     Section& addSection();
 
+    Section bodySection();
+
     const vector<int>& bodySectionIdList() const;
 
     const vector<int>& bdySectionIdList() const;
@@ -163,7 +165,7 @@ private:
     map<int, cgsize_t> globalNumber_;
     map<int, cgsize_t> globalOffset_;
     map<int, Section> sections_;
-    vector<int> bodySection_, bdySection_, interiorSection_;
+    vector<int> bodySectionIDList_, bdySectionIDList_, interiorSection_;
     cgsize_t idOffset_ = 1;
 
 private:
