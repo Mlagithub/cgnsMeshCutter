@@ -1,11 +1,75 @@
+#
+# A small macro used for converting a list into a space
+# separated string:
+#
+# Usage:
+#     TO_STRING(string ${list1} ${list2} ...)
+#
+MACRO(TO_STRING _variable)
+  SET(${_variable} "")
+  FOREACH(_var  ${ARGN})
+    SET(${_variable} "${${_variable}} ${_var}")
+  ENDFOREACH()
+  STRING(STRIP "${${_variable}}" ${_variable})
+ENDMACRO()
+
+#
+# If 'variable' is empty it will be set to 'value'
+#
+MACRO(SET_IF_EMPTY _variable)
+  IF("${${_variable}}" STREQUAL "")
+    SET(${_variable} ${ARGN})
+  ENDIF()
+ENDMACRO()
+
+
+MACRO(_FIND_LIBRARY _library_name)
+  # Save a string representation of the arguments before cmake's
+  # FIND_FILE gets its hands on it.
+  TO_STRING(_str ${ARGN})
+
+  FIND_LIBRARY(${_library_name} ${ARGN})
+
+  IF(${_library_name} MATCHES "-NOTFOUND")
+    MESSAGE(STATUS "${_library_name} not found! The call was:")
+    MESSAGE(STATUS "    FIND_LIBRARY(${_library_name} ${_str})")
+  ELSE()
+    MESSAGE(STATUS "Found ${${_library_name}}")
+    target_link_libraries(${TgtLib} PUBLIC ${${_library_name}})
+  ENDIF()
+ENDMACRO()
+
+#
+# A small wrapper around FIND_FILE to be a bit more verbose
+#
+MACRO(_FIND_PATH _path_name)
+  # Save a string representation of the arguments before cmake's
+  # FIND_PATH gets its hands on it.
+  TO_STRING(_str ${ARGN})
+
+  FIND_PATH(${_path_name} ${ARGN})
+
+  IF(${_path_name} MATCHES "-NOTFOUND")
+    MESSAGE(STATUS "${_path_name} not found! The call was:")
+    MESSAGE(STATUS "    FIND_PATH(${_path_name} ${_str})")
+  ELSE()
+    MESSAGE(STATUS "Found ${${_path_name}}")
+    target_include_directories(${TgtLib} PUBLIC ${${_path_name}})
+  ENDIF()
+ENDMACRO()
+
+
 # CGNS
-set (CGNS_ROOT "$ENV{CGNS_ROOT}")
-find_library(cgnslib cgns "${CGNS_ROOT}/lib" REQUIRED NO_DEFAULT_PATH)
-if(cgnslib)
-    message(STATUS "Found cgns: " ${cgnslib})
-    target_link_libraries(${TgtLib} PUBLIC ${cgnslib})
-    target_include_directories(${TgtLib} PUBLIC "${CGNS_ROOT}/include")
-endif()
+SET_IF_EMPTY(CGNS_DIR "$ENV{CGNS_ROOT}")
+_FIND_LIBRARY(CGNS_LIBRARY
+    NAMES cgns
+    HINTS ${CGNS_DIR}
+    PATH_SUFFIXES lib64 lib
+)
+_FIND_PATH(CGNS_INCLUDE_DIR cgnslib.h
+    HINTS ${CGNS_DIR}
+    PATH_SUFFIXES include cgns include/cgns
+)
 
 # METIS
 set (METIS_ROOT "$ENV{METIS_ROOT}")

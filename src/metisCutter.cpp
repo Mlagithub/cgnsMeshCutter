@@ -117,7 +117,7 @@ vector<MetisCutter::Cell> MetisCutter::collect_subBody(const MetisCutter::Decomp
     {
         for (idx_t i = 0; i < decomposeResult.nCellThisRank; ++i)
         {
-            auto partId = cellPartition_[i];
+            int partId = cellPartition_[i];
             auto threadId = ownerThread[partId];
             auto cellId = decomposeResult.start + i;
             cellInfo[threadId].push_back(Cell{cellId, partId});
@@ -194,7 +194,7 @@ void MetisCutter::cut_metis(string meshFilename, const int np)
     check(true, "", format("Call METIS_V3_PartMeshKway decompose: %s\n", bigBody.name));
     // cut
     check(
-        cut_metis(bigBody.data, np, cellPartition_, nodePartition_) == METIS_OK,
+        cut_metis(bigBody.data, (idx_t)np, cellPartition_, nodePartition_) == METIS_OK,
         format("Call METIS_V3_PartMeshKway decompose: %s return error %s", bigBody.name),
         format("Call METIS_V3_PartMeshKway decompose: %s successfuly\n", bigBody.name));
 
@@ -316,7 +316,7 @@ void MetisCutter::cut_parmetis(string meshFilename, const int np)
     MPIAdapter::Barrier();
 }
 
-int MetisCutter::cut_metis(const vector<vector<cgsize_t>>& cellToplogy, idx_t np, vector<idx_t>& cellPartition, vector<idx_t>& nodePartition)
+int MetisCutter::cut_metis(const vector<vector<idx_t>>& cellToplogy, idx_t np, vector<idx_t>& cellPartition, vector<idx_t>& nodePartition)
 {
     // metis options
     idx_t options[METIS_NOPTIONS];
@@ -546,8 +546,8 @@ void MetisCutter::rwInterface(const int id)
         }
         if(!curS.data.empty())
         {
-            strcpy(curS.name, format("Interface_%d_%d", 0, nbr).c_str());
-            strcpy(nbrS.name, format("Interface_%d_%d", 0, id).c_str());
+            strcpy(curS.name, format("Interface_%d", nbr).c_str());
+            strcpy(nbrS.name, format("Interface_%d", id).c_str());
 
             if(typeFlags.size()>1){
                 curS.cellType = ElementType_t::MIXED;

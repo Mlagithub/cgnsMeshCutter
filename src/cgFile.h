@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cgnslib.h>
 
 #include <string>
 #include <limits>
@@ -8,8 +9,6 @@
 #include <unordered_map>
 #include <map>
 #include <set>
-
-#include <cgnslib.h>
 
 using std::set;
 using std::map;

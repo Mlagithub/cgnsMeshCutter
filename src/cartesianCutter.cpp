@@ -1,11 +1,11 @@
+#include <cgnslib.h>
+
 #include <algorithm>
 #include <numeric>
 #include <cstring>
 #include <functional>
 #include <sstream>
 #include <fstream>
-
-#include "cgnslib.h"
 
 #include "cartesianCutter.h"
 #include "format.h"
