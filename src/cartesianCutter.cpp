@@ -1113,8 +1113,8 @@ void CartesianCutter::rwInterface(const int id)
         }
         if(!curS.data.empty())
         {
-            strcpy(curS.name, format("Interface_%d_%d", 0, nbr).c_str());
-            strcpy(nbrS.name, format("Interface_%d_%d", 0, id).c_str());
+            strcpy(curS.name, format("Interface_%d", nbr).c_str());
+            strcpy(nbrS.name, format("Interface_%d", id).c_str());
 
             if(typeFlags.size()>1){
                 curS.cellType = ElementType_t::MIXED;
