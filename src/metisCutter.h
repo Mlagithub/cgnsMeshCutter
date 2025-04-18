@@ -48,6 +48,7 @@ private:
         idx_t id;   // begin from 1
         int partId; // begin from 0;
     };
+    vector<int> ownerThread_;
 
 private:
     void collect_interface();
@@ -64,7 +65,9 @@ private:
 
     DecomposeResult decompose_body(const CGFile::Section& bigBody, const int np);
 
-    vector<int> openSubMeshToWrite(string filename, const int np);
+    void updateOwnerThread(string filename, const int np);
+
+    void openSubMeshToWrite(string filename, const int id, const int np);
 
     void rwBody(const int ifile, const CGFile::Section& bigBody);
 

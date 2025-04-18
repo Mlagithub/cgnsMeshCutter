@@ -186,7 +186,7 @@ void MetisCutter::cut_metis(string meshFilename, const int np)
 {
     // open mesh file to read/write
     bigMesh_ = std::make_shared<CGFile>(meshFilename);
-    this->openSubMeshToWrite(meshFilename, np);
+    this->updateOwnerThread(meshFilename, np);
 
     // load body-data into memory from file
     auto bigBody = bigMesh_->loadSection(bigMesh_->bodySectionIdList());
@@ -201,6 +201,9 @@ void MetisCutter::cut_metis(string meshFilename, const int np)
     // write sub-mesh data to file
     for(auto ifile=0; ifile<np; ++ifile)
     {
+        // open sub-mesh to write 
+        this->openSubMeshToWrite(meshFilename, ifile, np);
+
         // collect cell/node id of sub-mesh
         nodeIdG2L_.insert({ifile, {}}); // 1-base id
         nodeIds_.clear(); // 1-base id
@@ -256,7 +259,7 @@ void MetisCutter::cut_parmetis(string meshFilename, const int np)
 
     // open mesh file to read/write
     bigMesh_ = std::make_shared<CGFile>(meshFilename);
-    auto ownerThread = this->openSubMeshToWrite(meshFilename, np);
+    this->updateOwnerThread(meshFilename, np);
 
     // handle bodysection
     auto bigBody = bigMesh_->bodySection();
@@ -265,7 +268,7 @@ void MetisCutter::cut_parmetis(string meshFilename, const int np)
     // and collect subBody belong to each process
     auto comPartId = [](const Cell& lhs, const Cell& rhs){ return lhs.partId < rhs.partId; };
     auto comId = [](const Cell& lhs, const Cell& rhs){ return lhs.id < rhs.id; };
-    auto subBody = collect_subBody(this->decompose_body(bigBody, np), ownerThread);
+    auto subBody = collect_subBody(this->decompose_body(bigBody, np), ownerThread_);
     if(subBody.size()==0) std::cout << format("Thread %d has no subBody\n", RANK);
     std::sort(subBody.begin(), subBody.end(), comPartId);
     auto pos = subBody.begin();
@@ -423,31 +426,38 @@ MetisCutter::DecomposeResult MetisCutter::decompose_body(const CGFile::Section& 
     return result;
 }
 
-vector<int> MetisCutter::openSubMeshToWrite(string bigFileName, const int np)
+void MetisCutter::updateOwnerThread(string bigFileName, const int np)
 {
     idx_t dummy;
 
     // calculate partId collection of each thread
-    vector<int> ownerThread(np, 0);
+    ownerThread_.assign(np, 0);
     {
         auto tmp = distribute(np, SIZE, dummy);
         for(auto i=1; i<=SIZE; ++i)
         {
-            for(auto j=tmp[i-1]; j<tmp[i]; ++j) ownerThread[j] = i-1;
+            for(auto j=tmp[i-1]; j<tmp[i]; ++j) ownerThread_[j] = i-1;
         }
     }
 
     smallMesh_.assign(np, nullptr);
-    for(auto i=0; i<np; ++i)
-    {
-        if(ownerThread[i] == RANK)
-        {
-            smallMesh_[i] = std::make_shared<CGFile>(smallMeshName(bigFileName, i, np), CG_MODE_WRITE);
-            ownerFile_.insert(i);
-        } 
-    }
+    // for(auto i=0; i<np; ++i)
+    // {
+    //     if(ownerThread[i] == RANK)
+    //     {
+    //         smallMesh_[i] = std::make_shared<CGFile>(smallMeshName(bigFileName, i, np), CG_MODE_WRITE);
+    //         ownerFile_.insert(i);
+    //     } 
+    // }
+}
 
-    return ownerThread;
+void MetisCutter::openSubMeshToWrite(string filename, const int id, const int np)
+{
+    if(ownerThread_[id] == RANK)
+    {
+        smallMesh_[id] = std::make_shared<CGFile>(smallMeshName(filename, id, np), CG_MODE_WRITE);
+        ownerFile_.insert(id);
+    }
 }
 
 void MetisCutter::rwBody(const int ifile, const CGFile::Section& bigBody)
