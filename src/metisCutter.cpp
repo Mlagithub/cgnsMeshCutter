@@ -612,7 +612,7 @@ void MetisCutter::rwNode(const int ifile)
 std::string MetisCutter::smallMeshName(string bigMeshName, const int id, const int np)
 {
     char fmt[128], smallFilename[128];
-    sprintf(fmt, "%%s_%%0%dd.cgns", int(std::log10(np) + 1));
+    sprintf(fmt, "%%s.%d.%%0%dd.cgns", np, int(std::log10(np) + 1));
     sprintf(smallFilename, fmt, bigMeshName.substr(0, bigMeshName.size() - 5).c_str(), id);
 
     return smallFilename;
