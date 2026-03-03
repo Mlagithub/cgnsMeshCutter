@@ -21,7 +21,7 @@ void MPIAdapter::Finalize()
     MPI_Finalized(&flag);
 }
 
-void MPIAdapter::RequestFree(int *request)
+void MPIAdapter::RequestFree(MPI_Request *request)
 {
     MPI_Request_free(request);
 }
@@ -33,7 +33,7 @@ void MPIAdapter::TypeContiguous(const int count, MPI_Datatype oldtype, MPI_Datat
 
 void MPIAdapter::TypeStruct(int count, int *blk_len, MPI_Aint *disp, MPI_Datatype *types, MPI_Datatype *newType)
 {
-    MPI_Type_struct(count, blk_len, disp, types, newType);
+    MPI_Type_create_struct(count, blk_len, disp, types, newType);
 }
 
 void MPIAdapter::TypeCommit(MPI_Datatype *newType)

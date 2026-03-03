@@ -34,7 +34,7 @@ int main(int argc, char** argv)
         return 0;
     }
 
-    if(cl.get<bool>("usage")) argv[1] = "-h";
+    if(cl.get<bool>("usage")) argv[1] = const_cast<char*>("-h");
     cutter->cut(argc, argv);
     
     return 0;

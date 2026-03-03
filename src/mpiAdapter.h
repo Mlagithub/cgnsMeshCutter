@@ -63,7 +63,7 @@ public:
     }
 
     template <typename DATATYPE>
-    static void ISend(const DATATYPE *buf, int count, int dest, int tag, int *request)
+    static void ISend(const DATATYPE *buf, int count, int dest, int tag, MPI_Request *request)
     {
         MPI_Isend(buf, count, GetMPIDataType<DATATYPE>(), dest, tag, MPI_COMM_WORLD, request);
     }
@@ -74,7 +74,7 @@ public:
     }
 
     template <typename DATATYPE>
-    static void IRecv(DATATYPE *buf, int count, int src, int tag, int *request)
+    static void IRecv(DATATYPE *buf, int count, int src, int tag, MPI_Request *request)
     {
         MPI_Irecv(buf, count, GetMPIDataType<DATATYPE>(), src, tag, MPI_COMM_WORLD, request);
     }
@@ -95,12 +95,12 @@ public:
             dst = src;
         }
     }
-    static void WaitAll(int count, int *requests, MPI_Status *status)
+    static void WaitAll(int count, MPI_Request *requests, MPI_Status *status)
     {
         MPI_Waitall(count, requests, status);
     }
 
-    static void RequestFree(int *request);
+    static void RequestFree(MPI_Request *request);
 
     template <typename DATATYPE>
     static void AllGatherV(DATATYPE* sendBuf, int count, std::vector<DATATYPE>& recvBuf, std::vector<int>& disp)

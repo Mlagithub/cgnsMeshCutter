@@ -534,6 +534,7 @@ Vector<double> CartesianCutter::cellCenter(const vector<cgsize_t> &cell, const E
             center = center + (v[1] / vs) * (nodes[0] + nodes[2] + nodes[3]) / 3.0;
             return center;
         }
+        return Vector<double>{};
     };
 
     auto nodeLists = [&](const int id)

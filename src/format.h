@@ -1,6 +1,7 @@
 #ifndef FORMAT_H
 #define FORMAT_H
 
+#include <cstdio>
 #include <memory>
 #include <stdexcept>
 #include <string>
@@ -16,6 +17,11 @@ std::string format(const std::string &fmtStr, Args... args)
     std::unique_ptr<char[]> buf(new char[len]);
     snprintf(buf.get(), len, fmtStr.c_str(), args...);
     return std::string(buf.get(), buf.get() + len - 1);
+}
+
+inline std::string format(const std::string &fmtStr)
+{
+    return fmtStr;
 }
 } // namespace MeshCut
 

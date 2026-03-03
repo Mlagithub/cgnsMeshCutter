@@ -15,16 +15,15 @@
 
 static const int DataTAG = 1000;
 
-auto distribute = [&](const idx_t len, const int n, idx_t &nCellThisRank) {
-    vector<idx_t> dist(n + 1, 0); // same for all threads
-    {
-        auto step = (len + n - 1) / n;
-        nCellThisRank = MPIAdapter::isLast() ? len - (n - 1) * step : step;
-        MPI_Allgather(&nCellThisRank, 1, GetMPIDataType<idx_t>(), dist.data() + 1, 1, GetMPIDataType<idx_t>(), MPI_COMM_WORLD);
-        for (int iProc = 1; iProc < n + 1; ++iProc) { dist[iProc] += dist[iProc - 1]; }
-    }
+static std::vector<idx_t> distribute(const idx_t len, const int n, idx_t &nCellThisRank)
+{
+    vector<idx_t> dist(n + 1, 0);
+    auto step = (len + n - 1) / n;
+    nCellThisRank = MPIAdapter::isLast() ? len - (n - 1) * step : step;
+    MPI_Allgather(&nCellThisRank, 1, GetMPIDataType<idx_t>(), dist.data() + 1, 1, GetMPIDataType<idx_t>(), MPI_COMM_WORLD);
+    for (int iProc = 1; iProc < n + 1; ++iProc) { dist[iProc] += dist[iProc - 1]; }
     return dist;
-};
+}
 
 namespace MeshCut
 {
@@ -369,7 +368,7 @@ int MetisCutter::cut_parmetis(idx_t np, vector<idx_t>& elmdist, vector<idx_t>& e
     idx_t ncon = 1;         // the number of weights that each vertex has.
     idx_t ncommonnodes = 2; //should be greater than 0, 2 is ok for most meshes.
     idx_t edgecut = 0;
-    idx_t opts[3] = {0, 1, std::time(0)};
+    idx_t opts[3] = {0, 1, static_cast<idx_t>(std::time(nullptr))};
     real_t tpwgts[ncon * np];
     real_t ubvec[ncon];
 
