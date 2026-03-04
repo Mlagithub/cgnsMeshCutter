@@ -45,16 +45,12 @@ public:
             {
             case 1:
                 return min_x;
-                break;
             case 2:
                 return min_y;
-                break;
             case 3:
                 return min_z;
-                break;
             default:
-                std::cout << format("error to get min of bbox.\n");
-                break;
+                throw std::invalid_argument(format("invalid axis index: %d", i));
             }
         }
         double max(const int i)
@@ -63,15 +59,12 @@ public:
             {
             case 1:
                 return max_x;
-                break;
             case 2:
                 return max_y;
-                break;
             case 3:
                 return max_z;
-                break;
             default:
-                std::cout << format("error to get max of bbox.\n");
+                throw std::invalid_argument(format("invalid axis index: %d", i));
                 break;
             }
         }

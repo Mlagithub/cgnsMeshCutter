@@ -270,6 +270,9 @@ void MetisCutter::cut_parmetis(string meshFilename, const int np)
         auto curBody = bigMesh_->loadSection(bigMesh_->bodySectionIdList(), indexLB, indexUB);
         // check(true, "", format("  Thread %d: load %d cells [%d-%d] of part %d\n", RANK, indexUB-indexLB+1, indexLB, indexUB, ifile));
 
+        // open sub-mesh file for writing (CRITICAL: must be done before rwNode/rwBody)
+        this->openSubMeshToWrite(meshFilename, ifile, np);
+
         // cell and node
         cellIds_.clear(), nodeIds_.clear();
         for (auto cell : subBody)

@@ -13,7 +13,7 @@
 #include "cmdLine.h"
 
 
-#if defined(__GUNC__) || defined(__GNUG__)
+#if defined(__GNUC__) || defined(__GNUG__)
 #include <features.h>
 #if __GNUC_PREREQ(5,2)
 #else
@@ -925,8 +925,8 @@ vector<int> CartesianCutter::neighbors(const int x)
 string CartesianCutter::openToWrite(string bigFileName, const int id)
 {
     char fmt[128], smallFilename[128];
-    sprintf(fmt, "%%s_%%0%dd.cgns", int(std::log10(n_) + 1));
-    sprintf(smallFilename, fmt, bigFileName.substr(0, bigFileName.size() - 5).c_str(), id);
+    snprintf(fmt, sizeof(fmt), "%%s_%%0%dd.cgns", int(std::log10(n_) + 1));
+    snprintf(smallFilename, sizeof(smallFilename), fmt, bigFileName.substr(0, bigFileName.size() - 5).c_str(), id);
 
     check(
         cg_open(smallFilename, CG_MODE_WRITE, &smallFiles_[id]), 
@@ -981,20 +981,21 @@ void CartesianCutter::readNode()
     cgsize_t range_min = 1, range_max = zoneInfo[0];
     auto len = range_max - range_min + 1;
     nodesData_.assign(3, vector<double>(len, 0.0));
-    void *data;
-    New[coordDataType_](data, len);
+    
+    // Use RAII: std::vector instead of raw pointer
+    std::vector<double> coordData(len);
+    
     for (auto iCoord = 0; iCoord < 3; ++iCoord)
     {
         const char *coordname = coordname_[iCoord].c_str();
         std::cout << format("Read %s [%d - %d]\n", coordname, range_min, range_max);
-        cg_coord_read(bigFile_, ibase, izone, coordname, coordDataType_, &range_min, &range_max, data);
+        cg_coord_read(bigFile_, ibase, izone, coordname, coordDataType_, &range_min, &range_max, coordData.data());
         auto &ndata = nodesData_[iCoord];
         for (cgsize_t i = 0; i < len; ++i)
         {
-            ndata[i] = Get[coordDataType_](data, i);
+            ndata[i] = coordData[i];
         }
     }
-    Delete[coordDataType_](data);
 }
 
 void CartesianCutter::rwBoundary(const int id)

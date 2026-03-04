@@ -1,10 +1,13 @@
 #pragma once
 
-#include <iostream>
-#include <vector>
-#include <numeric>
+#include <compi/context.h>
+#include <compi/collectives.h>
 
 #include <mpi.h>
+#include <vector>
+#include <numeric>
+#include <type_traits>
+#include <memory>
 
 template <typename DOUBLE, typename std::enable_if<std::is_same<DOUBLE, double>::value, int>::type = 0>
 constexpr MPI_Datatype GetMPIDataType()
@@ -28,6 +31,8 @@ constexpr MPI_Datatype GetMPIDataType()
 class MPIAdapter
 {
 private:
+    static std::unique_ptr<compi::Environment> _env;
+    static compi::Context* _ctx;
     static int _size;
     static int _rank;
 
@@ -47,7 +52,9 @@ public:
     template <typename DATATYPE>
     static void Bcast(DATATYPE *buf, int count, int root)
     {
-        MPI_Bcast(buf, count, GetMPIDataType<DATATYPE>(), root, MPI_COMM_WORLD);
+        if (isParallel()) {
+            MPI_Bcast(buf, count, GetMPIDataType<DATATYPE>(), root, MPI_COMM_WORLD);
+        }
     }
 
     template <typename DATATYPE>
@@ -95,9 +102,10 @@ public:
             dst = src;
         }
     }
-    static void WaitAll(int count, MPI_Request *requests, MPI_Status *status)
+    
+    static void WaitAll(int count, MPI_Request *requests, MPI_Status *statuses)
     {
-        MPI_Waitall(count, requests, status);
+        MPI_Waitall(count, requests, statuses);
     }
 
     static void RequestFree(MPI_Request *request);
@@ -105,6 +113,12 @@ public:
     template <typename DATATYPE>
     static void AllGatherV(DATATYPE* sendBuf, int count, std::vector<DATATYPE>& recvBuf, std::vector<int>& disp)
     {
+        if (!isParallel()) {
+            recvBuf.assign(sendBuf, sendBuf + count);
+            disp.assign(1, count);
+            return;
+        }
+        
         int *lenAll = new int[MPIAdapter::size()];
         MPI_Allgather(&count, 1, GetMPIDataType<DATATYPE>(), lenAll, 1, GetMPIDataType<DATATYPE>(), MPI_COMM_WORLD);      
         int lenTotal = std::accumulate(lenAll, lenAll+MPIAdapter::size(), 0);
@@ -121,6 +135,7 @@ public:
         {
             disp[i] = disp[i-1] + lenAll[i]; 
         }
+        delete[] lenAll;
     }
 
     static void TypeContiguous(const int count, MPI_Datatype oldtype, MPI_Datatype *newType);

@@ -2,9 +2,6 @@
 # A small macro used for converting a list into a space
 # separated string:
 #
-# Usage:
-#     TO_STRING(string ${list1} ${list2} ...)
-#
 MACRO(TO_STRING _variable)
   SET(${_variable} "")
   FOREACH(_var  ${ARGN})
@@ -24,12 +21,8 @@ ENDMACRO()
 
 
 MACRO(_FIND_LIBRARY _library_name)
-  # Save a string representation of the arguments before cmake's
-  # FIND_FILE gets its hands on it.
   TO_STRING(_str ${ARGN})
-
   FIND_LIBRARY(${_library_name} ${ARGN})
-
   IF(${_library_name} MATCHES "-NOTFOUND")
     MESSAGE(STATUS "${_library_name} not found! The call was:")
     MESSAGE(STATUS "    FIND_LIBRARY(${_library_name} ${_str})")
@@ -39,16 +32,9 @@ MACRO(_FIND_LIBRARY _library_name)
   ENDIF()
 ENDMACRO()
 
-#
-# A small wrapper around FIND_FILE to be a bit more verbose
-#
 MACRO(_FIND_PATH _path_name)
-  # Save a string representation of the arguments before cmake's
-  # FIND_PATH gets its hands on it.
   TO_STRING(_str ${ARGN})
-
   FIND_PATH(${_path_name} ${ARGN})
-
   IF(${_path_name} MATCHES "-NOTFOUND")
     MESSAGE(STATUS "${_path_name} not found! The call was:")
     MESSAGE(STATUS "    FIND_PATH(${_path_name} ${_str})")
@@ -57,7 +43,6 @@ MACRO(_FIND_PATH _path_name)
     target_include_directories(${TgtLib} PUBLIC ${${_path_name}})
   ENDIF()
 ENDMACRO()
-
 
 # CGNS
 SET_IF_EMPTY(CGNS_DIR "$ENV{CGNS_ROOT}")
@@ -95,19 +80,8 @@ elseif()
     message(ERROR "Can not find parmetis.")
 endif()
 
-
-# MPI
-find_package(MPI)
-if(MPI_FOUND)
-    message(STATUS "Found MPI_LIB: " ${MPI_CXX_LIBRARIES})
-    target_include_directories(${TgtLib} PUBLIC ${MPI_C_INCLUDE_DIRS} ${MPI_CXX_INCLUDE_DIRS})
-    target_link_libraries(${TgtLib} PUBLIC ${MPI_C_LIBRARIES} ${MPI_CXX_LIBRARIES})
-else(MPI_FOUND)
-    set (MPI_ROOT "$ENV{MPI_ROOT}")
-    find_library(mpilib NAMES mpi PATHS "${MPI_ROOT}/lib" `which mpicc`../../lib)
-    target_include_directories(${TgtLib} PUBLIC "${MPI_ROOT}/include")
-    target_link_libraries(${TgtLib} PUBLIC ${mpilib})
-endif(MPI_FOUND)
+# Link external libraries
+target_link_libraries(${TgtLib} PUBLIC compi)
 
 target_include_directories(${TgtLib} 
 PUBLIC 

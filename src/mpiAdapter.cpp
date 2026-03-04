@@ -1,24 +1,26 @@
 #include "mpiAdapter.h"
 
+std::unique_ptr<compi::Environment> MPIAdapter::_env = nullptr;
+compi::Context* MPIAdapter::_ctx = nullptr;
 int MPIAdapter::_size = 1;
 int MPIAdapter::_rank = 0;
 
 void MPIAdapter::Initialize(int *argc, char ***argv)
 {
-    int flag;
-    MPI_Initialized(&flag);
-    if (!flag)
-    {
-        MPI_Init(argc, argv);
-    }
+    // Initialize MPI via compi::Environment
+    _env = std::make_unique<compi::Environment>(compi::ThreadLevel::Multiple);
+    _ctx = &compi::Context::for_comm(MPI_COMM_WORLD);
+    
     MPI_Comm_size(MPI_COMM_WORLD, &_size);
     MPI_Comm_rank(MPI_COMM_WORLD, &_rank);
 }
 
 void MPIAdapter::Finalize()
 {
-    int flag;
-    MPI_Finalized(&flag);
+    _ctx = nullptr;
+    _env.reset();
+    _size = 1;
+    _rank = 0;
 }
 
 void MPIAdapter::RequestFree(MPI_Request *request)
