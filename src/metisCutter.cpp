@@ -16,10 +16,19 @@ static const int DataTAG = 1000;
 static std::vector<idx_t> distribute(const idx_t len, const int n, idx_t &nCellThisRank)
 {
     vector<idx_t> dist(n + 1, 0);
-    auto step = (len + n - 1) / n;
-    nCellThisRank = MPIAdapter::isLast() ? len - (n - 1) * step : step;
+    idx_t base = len / n;
+    idx_t remainder = len % n;
+
+    // 计算当前 rank 应该处理的数量
+    int rank = MPIAdapter::rank();
+    nCellThisRank = base + (rank < remainder ? 1 : 0);
+
+    // 同步所有 rank 的数量
     MPI_Allgather(&nCellThisRank, 1, GetMPIDataType<idx_t>(), dist.data() + 1, 1, GetMPIDataType<idx_t>(), MPI_COMM_WORLD);
+
+    // 计算累积偏移
     for (int iProc = 1; iProc < n + 1; ++iProc) { dist[iProc] += dist[iProc - 1]; }
+
     return dist;
 }
 
@@ -813,6 +822,9 @@ void MetisCutter::rwInterface(const int id)
                     nbrS.offset.push_back(curOffset);
                     curOffset += it.size() + 1;
                 }
+                // 补全最后一个 offset
+                curS.offset.push_back(curOffset);
+                nbrS.offset.push_back(curOffset);
             }
             else if (typeFlags.size() == 1)
             {
@@ -857,13 +869,9 @@ void MetisCutter::rwNode(const int ifile)
 
 std::string MetisCutter::smallMeshName(string bigMeshName, const int id, const int np)
 {
-    char fmt[128], smallFilename[128];
-    // sprintf(fmt, "%%s.%d.%%0%dd.cgns", np, int(std::log10(np) + 1));
-    // sprintf(smallFilename, fmt, bigMeshName.substr(0, bigMeshName.size() - 5).c_str(), id);
-    sprintf(fmt, "decomposed_mesh_%%0%dd.cgns", int(std::log10(np) + 1));
-    sprintf(smallFilename, fmt, id);
-
-    return smallFilename;
+    char smallFilename[128];
+    sprintf(smallFilename, "decomposed_mesh_%01d.cgns", id);
+    return std::string(smallFilename);
 }
 
 void MetisCutter::updateOuterFace(const CGFile::Section &curS, const int ifile)
@@ -912,16 +920,21 @@ void MetisCutter::writeInterface(const int id, const int np)
         auto &nbrOuterFace = outerFace_[nbr];
 
         set<cgsize_t> typeFlags;
-        CGFile::Section curS;
+        CGFile::Section curS, nbrS;
         for (auto face = nbrOuterFace.begin(); face != nbrOuterFace.end();)
         {
             auto it = curOuterFace.find(face->first);
             if (it != curOuterFace.end())
             {
                 curS.data.emplace_back(it->second);
+                nbrS.data.push_back(face->second);
+
                 auto t = CGFile::CellType(it->second.size(), 2);
                 curS.typeFlag.push_back(t);
+                nbrS.typeFlag.push_back(t);
+
                 typeFlags.insert(it->second.size());
+
                 it = curOuterFace.erase(it);
                 face = nbrOuterFace.erase(face);
             }
@@ -937,21 +950,52 @@ void MetisCutter::writeInterface(const int id, const int np)
             if (typeFlags.size() > 1)
             {
                 curS.cellType = ElementType_t::MIXED;
+                nbrS.cellType = ElementType_t::MIXED;
+
+                // 设置 offset 数组
+                auto curOffset = 0;
+                for (auto it : curS.data)
+                {
+                    curS.offset.push_back(curOffset);
+                    nbrS.offset.push_back(curOffset);
+                    curOffset += it.size() + 1;
+                }
+                // 补全最后一个 offset
+                curS.offset.push_back(curOffset);
+                nbrS.offset.push_back(curOffset);
             }
             else if (typeFlags.size() == 1)
             {
-                curS.cellType = (*typeFlags.begin() == 3) ? ElementType_t::TRI_3 : ElementType_t::QUAD_4;
+                auto type = (*typeFlags.begin() == 3) ? ElementType_t::TRI_3 : ElementType_t::QUAD_4;
+                curS.cellType = type;
+                nbrS.cellType = type;
             }
 
             // 写入当前分区的 interface
             strcpy(curS.name, format("Interface_%d", nbr).c_str());
             curFile.writeSection(curS, nodeIdG2L_[id]);
+
+            // 写入邻居分区的 interface (只有当前进程拥有邻居分区时才写入)
+            // 注意: 并行版本中,每个进程只写入自己拥有的分区文件
+            // 邻居分区的 interface 由拥有该分区的进程写入
+            if (ownerFile_.count(nbr) != 0)
+            {
+                strcpy(nbrS.name, format("Interface_%d", id).c_str());
+                std::string nbrFilename = this->smallMeshName("", nbr, np);
+                CGFile nbrFile(nbrFilename, CG_MODE_MODIFY);
+                nbrFile.setIdOffset(maxElemId_[nbr] + 1);
+                nbrFile.writeSection(nbrS, nodeIdG2L_[nbr]);
+                nbrFile.close();
+            }
         }
 
         // clear
         vector<vector<cgsize_t>>{}.swap(curS.data);
         vector<cgsize_t>{}.swap(curS.offset);
         vector<cgsize_t>{}.swap(curS.typeFlag);
+        vector<vector<cgsize_t>>{}.swap(nbrS.data);
+        vector<cgsize_t>{}.swap(nbrS.offset);
+        vector<cgsize_t>{}.swap(nbrS.typeFlag);
     }
 
     curFile.close();

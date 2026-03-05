@@ -1,0 +1,718 @@
+========================================
+MetisCutter 并行剖分算法性能测试
+测试时间: Thu Mar  5 21:10:32 CST 2026
+========================================
+
+========== 测试1: 小网格性能测试 ==========
+网格文件: pipe.cgns (大小: 1.2M)
+
+----------------------------------------
+测试: 串行-2分区
+网格: pipe.cgns
+分区数: 2, MPI进程数: 1
+Call METIS_V3_PartMeshKway decompose: SOLID_1_1_SOLID
+Call METIS_V3_PartMeshKway decompose: SOLID_1_1_SOLID successfuly
+  decomposed_mesh_0.cgns: write section SOLID_1_1_SOLID [7888: 1, 7888]
+  decomposed_mesh_0.cgns: write section INLET [79: 7889, 7967]
+  decomposed_mesh_0.cgns: write section WALL [2793: 7968, 10760]
+  decomposed_mesh_1.cgns: write section SOLID_1_1_SOLID [7912: 1, 7912]
+  decomposed_mesh_1.cgns: write section OUTLET [79: 7913, 7991]
+  decomposed_mesh_1.cgns: write section WALL [2807: 7992, 10798]
+  decomposed_mesh_1.cgns: write section Interface_0 [86: 10799, 10884]
+  decomposed_mesh_0.cgns: write section Interface_1 [86: 10761, 10846]
+close file decomposed_mesh_0.cgns
+close file decomposed_mesh_1.cgns
+close file pipe.cgns
+执行时间: .129431579 秒
+生成文件数: 2
+
+----------------------------------------
+测试: 并行-2分区-2进程
+网格: pipe.cgns
+分区数: 2, MPI进程数: 2
+ParMETIS_V3_PartMeshKway begin divide: SOLID_1_1_SOLID
+ParMETIS_V3_PartMeshKway begin divide: SOLID_1_1_SOLID
+ParMETIS_V3_PartMeshKway done
+ParMETIS_V3_PartMeshKway done
+  decomposed_mesh_1.cgns: write section SOLID_1_1_SOLID [7884: 1, 7884]
+  decomposed_mesh_0.cgns: write section SOLID_1_1_SOLID [7916: 1, 7916]
+  decomposed_mesh_0.cgns: write section INLET [79: 7917, 7995]
+  decomposed_mesh_1.cgns: write section OUTLET [79: 7885, 7963]
+  decomposed_mesh_1.cgns: write section WALL [2794: 7964, 10757]
+  decomposed_mesh_0.cgns: write section WALL [2806: 7996, 10801]
+  Thread 0: recv 91 interface of file 1
+  Thread 1: recv 91 interface of file 0
+close file pipe.cgns
+close file decomposed_mesh_0.cgns
+close file pipe.cgns
+close file decomposed_mesh_1.cgns
+  decomposed_mesh_0.cgns: write section Interface_1 [91: 10802, 10892]
+  decomposed_mesh_1.cgns: write section Interface_0 [91: 10758, 10848]
+close file decomposed_mesh_0.cgns
+close file decomposed_mesh_1.cgns
+执行时间: .156025468 秒
+生成文件数: 2
+
+----------------------------------------
+测试: 并行-4分区-2进程
+网格: pipe.cgns
+分区数: 4, MPI进程数: 2
+ParMETIS_V3_PartMeshKway begin divide: SOLID_1_1_SOLID
+ParMETIS_V3_PartMeshKway begin divide: SOLID_1_1_SOLID
+ParMETIS_V3_PartMeshKway done
+ParMETIS_V3_PartMeshKway done
+  decomposed_mesh_0.cgns: write section SOLID_1_1_SOLID [4011: 1, 4011]
+  decomposed_mesh_2.cgns: write section SOLID_1_1_SOLID [3898: 1, 3898]
+  decomposed_mesh_0.cgns: write section INLET [79: 4012, 4090]
+  decomposed_mesh_2.cgns: write section WALL [1380: 3899, 5278]
+  decomposed_mesh_0.cgns: write section WALL [1425: 4091, 5515]
+  decomposed_mesh_1.cgns: write section SOLID_1_1_SOLID [3905: 1, 3905]
+  decomposed_mesh_3.cgns: write section SOLID_1_1_SOLID [3986: 1, 3986]
+  decomposed_mesh_3.cgns: write section OUTLET [79: 3987, 4065]
+  decomposed_mesh_1.cgns: write section WALL [1381: 3906, 5286]
+  decomposed_mesh_3.cgns: write section WALL [1414: 4066, 5479]
+  Thread 0: recv 97 interface of file 3
+  Thread 1: recv 189 interface of file 1
+  Thread 0: recv 188 interface of file 2
+close file pipe.cgns
+close file decomposed_mesh_0.cgns
+close file decomposed_mesh_1.cgns
+  decomposed_mesh_0.cgns: write section Interface_1 [98: 5516, 5613]
+  decomposed_mesh_1.cgns: write section Interface_0 [98: 5287, 5384]
+close file decomposed_mesh_1.cgns
+close file decomposed_mesh_0.cgns
+  decomposed_mesh_1.cgns: write section Interface_2 [91: 5287, 5377]
+close file decomposed_mesh_1.cgns
+  Thread 1: recv 98 interface of file 0
+close file pipe.cgns
+close file decomposed_mesh_2.cgns
+close file decomposed_mesh_3.cgns
+  decomposed_mesh_2.cgns: write section Interface_1 [91: 5279, 5369]
+  decomposed_mesh_2.cgns: write section Interface_3 [97: 5370, 5466]
+  decomposed_mesh_3.cgns: write section Interface_2 [97: 5480, 5576]
+close file decomposed_mesh_3.cgns
+close file decomposed_mesh_2.cgns
+close file decomposed_mesh_3.cgns
+执行时间: .125243753 秒
+生成文件数: 4
+
+----------------------------------------
+测试: 并行-4分区-4进程
+网格: pipe.cgns
+分区数: 4, MPI进程数: 4
+ParMETIS_V3_PartMeshKway begin divide: SOLID_1_1_SOLID
+ParMETIS_V3_PartMeshKway begin divide: SOLID_1_1_SOLID
+ParMETIS_V3_PartMeshKway begin divide: SOLID_1_1_SOLID
+ParMETIS_V3_PartMeshKway begin divide: SOLID_1_1_SOLID
+ParMETIS_V3_PartMeshKway done
+ParMETIS_V3_PartMeshKway done
+ParMETIS_V3_PartMeshKway done
+ParMETIS_V3_PartMeshKway done
+  decomposed_mesh_0.cgns: write section SOLID_1_1_SOLID [3945: 1, 3945]
+  decomposed_mesh_2.cgns: write section SOLID_1_1_SOLID [3944: 1, 3944]
+  decomposed_mesh_3.cgns: write section SOLID_1_1_SOLID [3945: 1, 3945]
+  decomposed_mesh_1.cgns: write section SOLID_1_1_SOLID [3966: 1, 3966]
+  decomposed_mesh_0.cgns: write section INLET [79: 3946, 4024]
+  decomposed_mesh_3.cgns: write section OUTLET [79: 3946, 4024]
+  decomposed_mesh_1.cgns: write section WALL [1407: 3967, 5373]
+  decomposed_mesh_3.cgns: write section WALL [1397: 4025, 5421]
+  decomposed_mesh_0.cgns: write section WALL [1397: 4025, 5421]
+  decomposed_mesh_2.cgns: write section WALL [1399: 3945, 5343]
+  Thread 0: recv 171 interface of file 1
+  Thread 1: recv 84 interface of file 0
+  Thread 2: recv 84 interface of file 0
+  Thread 2: recv 171 interface of file 1
+  Thread 3: recv 84 interface of file 0
+  Thread 3: recv 171 interface of file 1
+  Thread 1: recv 171 interface of file 2
+  Thread 2: recv 84 interface of file 3
+  Thread 3: recv 171 interface of file 2
+  Thread 1: recv 84 interface of file 3
+  Thread 0: recv 171 interface of file 2
+  Thread 0: recv 84 interface of file 3
+close file pipe.cgns
+close file decomposed_mesh_0.cgns
+close file pipe.cgns
+close file decomposed_mesh_1.cgns
+close file pipe.cgns
+close file decomposed_mesh_2.cgns
+close file pipe.cgns
+close file decomposed_mesh_3.cgns
+  decomposed_mesh_2.cgns: write section Interface_1 [87: 5344, 5430]
+  decomposed_mesh_1.cgns: write section Interface_0 [84: 5374, 5457]
+  decomposed_mesh_0.cgns: write section Interface_1 [84: 5422, 5505]
+  decomposed_mesh_3.cgns: write section Interface_2 [84: 5422, 5505]
+close file decomposed_mesh_3.cgns
+close file decomposed_mesh_0.cgns
+  decomposed_mesh_2.cgns: write section Interface_3 [84: 5431, 5514]
+  decomposed_mesh_1.cgns: write section Interface_2 [87: 5458, 5544]
+close file decomposed_mesh_1.cgns
+close file decomposed_mesh_2.cgns
+执行时间: .157600166 秒
+生成文件数: 4
+
+----------------------------------------
+测试: 并行-8分区-4进程
+网格: pipe.cgns
+分区数: 8, MPI进程数: 4
+ParMETIS_V3_PartMeshKway begin divide: SOLID_1_1_SOLID
+ParMETIS_V3_PartMeshKway begin divide: SOLID_1_1_SOLID
+ParMETIS_V3_PartMeshKway begin divide: SOLID_1_1_SOLID
+ParMETIS_V3_PartMeshKway begin divide: SOLID_1_1_SOLID
+ParMETIS_V3_PartMeshKway done
+ParMETIS_V3_PartMeshKway done
+ParMETIS_V3_PartMeshKway done
+ParMETIS_V3_PartMeshKway done
+  decomposed_mesh_0.cgns: write section SOLID_1_1_SOLID [1878: 1, 1878]
+  decomposed_mesh_6.cgns: write section SOLID_1_1_SOLID [1959: 1, 1959]
+  decomposed_mesh_4.cgns: write section SOLID_1_1_SOLID [1964: 1, 1964]
+  decomposed_mesh_2.cgns: write section SOLID_1_1_SOLID [1917: 1, 1917]
+  decomposed_mesh_2.cgns: write section WALL [684: 1918, 2601]
+  decomposed_mesh_4.cgns: write section WALL [695: 1965, 2659]
+  decomposed_mesh_0.cgns: write section WALL [670: 1879, 2548]
+  decomposed_mesh_6.cgns: write section WALL [694: 1960, 2653]
+  decomposed_mesh_3.cgns: write section SOLID_1_1_SOLID [2051: 1, 2051]
+  decomposed_mesh_5.cgns: write section SOLID_1_1_SOLID [1971: 1, 1971]
+  decomposed_mesh_1.cgns: write section SOLID_1_1_SOLID [2065: 1, 2065]
+  decomposed_mesh_7.cgns: write section SOLID_1_1_SOLID [1995: 1, 1995]
+  decomposed_mesh_1.cgns: write section INLET [79: 2066, 2144]
+  decomposed_mesh_7.cgns: write section OUTLET [79: 1996, 2074]
+  decomposed_mesh_5.cgns: write section WALL [701: 1972, 2672]
+  decomposed_mesh_3.cgns: write section WALL [724: 2052, 2775]
+  decomposed_mesh_1.cgns: write section WALL [726: 2145, 2870]
+  decomposed_mesh_7.cgns: write section WALL [706: 2075, 2780]
+  Thread 0: recv 174 interface of file 3
+  Thread 2: recv 109 interface of file 1
+  Thread 3: recv 109 interface of file 1
+  Thread 1: recv 109 interface of file 1
+  Thread 2: recv 194 interface of file 0
+  Thread 1: recv 194 interface of file 0
+  Thread 3: recv 194 interface of file 0
+  Thread 2: recv 174 interface of file 3
+  Thread 1: recv 183 interface of file 5
+  Thread 2: recv 172 interface of file 2
+  Thread 3: recv 174 interface of file 3
+  Thread 1: recv 183 interface of file 4
+  Thread 3: recv 172 interface of file 2
+  Thread 2: recv 101 interface of file 7
+  Thread 1: recv 101 interface of file 7
+  Thread 3: recv 183 interface of file 5
+  Thread 0: recv 172 interface of file 2
+  Thread 2: recv 188 interface of file 6
+  Thread 1: recv 188 interface of file 6
+  Thread 3: recv 183 interface of file 4
+  Thread 0: recv 183 interface of file 5
+  Thread 0: recv 183 interface of file 4
+  Thread 0: recv 101 interface of file 7
+  Thread 0: recv 188 interface of file 6
+close file pipe.cgns
+close file decomposed_mesh_0.cgns
+close file decomposed_mesh_1.cgns
+  decomposed_mesh_0.cgns: write section Interface_1 [109: 2549, 2657]
+  decomposed_mesh_1.cgns: write section Interface_0 [109: 2871, 2979]
+close file decomposed_mesh_1.cgns
+  decomposed_mesh_0.cgns: write section Interface_2 [85: 2658, 2742]
+close file decomposed_mesh_0.cgns
+close file decomposed_mesh_1.cgns
+close file pipe.cgns
+close file decomposed_mesh_2.cgns
+close file decomposed_mesh_3.cgns
+  decomposed_mesh_2.cgns: write section Interface_0 [85: 2602, 2686]
+  decomposed_mesh_2.cgns: write section Interface_3 [87: 2687, 2773]
+  decomposed_mesh_3.cgns: write section Interface_2 [87: 2776, 2862]
+close file decomposed_mesh_3.cgns
+close file decomposed_mesh_2.cgns
+  decomposed_mesh_3.cgns: write section Interface_4 [87: 2776, 2862]
+close file decomposed_mesh_3.cgns
+close file pipe.cgns
+close file decomposed_mesh_4.cgns
+close file decomposed_mesh_5.cgns
+  decomposed_mesh_4.cgns: write section Interface_3 [87: 2660, 2746]
+  decomposed_mesh_4.cgns: write section Interface_5 [96: 2747, 2842]
+  decomposed_mesh_5.cgns: write section Interface_4 [96: 2673, 2768]
+close file decomposed_mesh_5.cgns
+close file decomposed_mesh_4.cgns
+  decomposed_mesh_5.cgns: write section Interface_6 [87: 2673, 2759]
+close file decomposed_mesh_5.cgns
+close file pipe.cgns
+close file decomposed_mesh_6.cgns
+close file decomposed_mesh_7.cgns
+  decomposed_mesh_6.cgns: write section Interface_5 [87: 2654, 2740]
+  decomposed_mesh_6.cgns: write section Interface_7 [101: 2741, 2841]
+  decomposed_mesh_7.cgns: write section Interface_6 [101: 2781, 2881]
+close file decomposed_mesh_7.cgns
+close file decomposed_mesh_6.cgns
+close file decomposed_mesh_7.cgns
+执行时间: .174964903 秒
+生成文件数: 8
+
+========== 测试2: 中等网格性能测试 ==========
+网格文件: pipe.256w.cgns (大小: 154M)
+
+----------------------------------------
+测试: 串行-2分区
+网格: pipe.256w.cgns
+分区数: 2, MPI进程数: 1
+Call METIS_V3_PartMeshKway decompose: SOLID_1_1_SOLID
+Call METIS_V3_PartMeshKway decompose: SOLID_1_1_SOLID successfuly
+  decomposed_mesh_0.cgns: write section SOLID_1_1_SOLID [1284293: 1, 1284293]
+  decomposed_mesh_0.cgns: write section OUTLET [1669: 1284294, 1285962]
+  decomposed_mesh_0.cgns: write section WALL [104598: 1285963, 1390560]
+  decomposed_mesh_1.cgns: write section SOLID_1_1_SOLID [1284298: 1, 1284298]
+  decomposed_mesh_1.cgns: write section INLET [1669: 1284299, 1285967]
+  decomposed_mesh_1.cgns: write section WALL [104706: 1285968, 1390673]
+  decomposed_mesh_1.cgns: write section Interface_0 [2075: 1390674, 1392748]
+  decomposed_mesh_0.cgns: write section Interface_1 [2075: 1390561, 1392635]
+close file decomposed_mesh_0.cgns
+close file decomposed_mesh_1.cgns
+close file pipe.256w.cgns
+执行时间: 18.049904186 秒
+生成文件数: 2
+
+----------------------------------------
+测试: 并行-2分区-2进程
+网格: pipe.256w.cgns
+分区数: 2, MPI进程数: 2
+ParMETIS_V3_PartMeshKway begin divide: SOLID_1_1_SOLID
+ParMETIS_V3_PartMeshKway begin divide: SOLID_1_1_SOLID
+ParMETIS_V3_PartMeshKway done
+ParMETIS_V3_PartMeshKway done
+  decomposed_mesh_0.cgns: write section SOLID_1_1_SOLID [1284293: 1, 1284293]
+  decomposed_mesh_1.cgns: write section SOLID_1_1_SOLID [1284298: 1, 1284298]
+  decomposed_mesh_0.cgns: write section INLET [1669: 1284294, 1285962]
+  decomposed_mesh_1.cgns: write section OUTLET [1669: 1284299, 1285967]
+  decomposed_mesh_0.cgns: write section WALL [104584: 1285963, 1390546]
+  decomposed_mesh_1.cgns: write section WALL [104720: 1285968, 1390687]
+  Thread 0: recv 1813 interface of file 1
+  Thread 1: recv 1813 interface of file 0
+close file pipe.256w.cgns
+close file decomposed_mesh_0.cgns
+close file pipe.256w.cgns
+close file decomposed_mesh_1.cgns
+  decomposed_mesh_1.cgns: write section Interface_0 [1813: 1390688, 1392500]
+close file decomposed_mesh_1.cgns
+  decomposed_mesh_0.cgns: write section Interface_1 [1813: 1390547, 1392359]
+close file decomposed_mesh_0.cgns
+执行时间: 12.186787077 秒
+生成文件数: 2
+
+----------------------------------------
+测试: 并行-4分区-2进程
+网格: pipe.256w.cgns
+分区数: 4, MPI进程数: 2
+ParMETIS_V3_PartMeshKway begin divide: SOLID_1_1_SOLID
+ParMETIS_V3_PartMeshKway begin divide: SOLID_1_1_SOLID
+ParMETIS_V3_PartMeshKway done
+ParMETIS_V3_PartMeshKway done
+  decomposed_mesh_0.cgns: write section SOLID_1_1_SOLID [641617: 1, 641617]
+  decomposed_mesh_2.cgns: write section SOLID_1_1_SOLID [655256: 1, 655256]
+  decomposed_mesh_0.cgns: write section WALL [52297: 641618, 693914]
+  decomposed_mesh_2.cgns: write section WALL [53337: 655257, 708593]
+  decomposed_mesh_1.cgns: write section SOLID_1_1_SOLID [642733: 1, 642733]
+  decomposed_mesh_3.cgns: write section SOLID_1_1_SOLID [628985: 1, 628985]
+  decomposed_mesh_1.cgns: write section OUTLET [1669: 642734, 644402]
+  decomposed_mesh_3.cgns: write section INLET [1669: 628986, 630654]
+  decomposed_mesh_1.cgns: write section WALL [52423: 644403, 696825]
+  decomposed_mesh_3.cgns: write section WALL [51247: 630655, 681901]
+  Thread 1: recv 2614 interface of file 1
+  Thread 0: recv 2358 interface of file 3
+  Thread 1: recv 4435 interface of file 0
+  Thread 0: recv 4179 interface of file 2
+close file pipe.256w.cgns
+close file decomposed_mesh_0.cgns
+close file decomposed_mesh_1.cgns
+close file pipe.256w.cgns
+close file decomposed_mesh_2.cgns
+close file decomposed_mesh_3.cgns
+  decomposed_mesh_2.cgns: write section Interface_0 [1821: 708594, 710414]
+  decomposed_mesh_0.cgns: write section Interface_1 [2614: 693915, 696528]
+  decomposed_mesh_1.cgns: write section Interface_0 [2614: 696826, 699439]
+close file decomposed_mesh_1.cgns
+  decomposed_mesh_2.cgns: write section Interface_3 [2358: 710415, 712772]
+  decomposed_mesh_0.cgns: write section Interface_2 [1821: 696529, 698349]
+close file decomposed_mesh_0.cgns
+close file decomposed_mesh_1.cgns
+  decomposed_mesh_3.cgns: write section Interface_2 [2358: 681902, 684259]
+close file decomposed_mesh_3.cgns
+close file decomposed_mesh_2.cgns
+close file decomposed_mesh_3.cgns
+执行时间: 12.054822936 秒
+生成文件数: 4
+
+----------------------------------------
+测试: 并行-4分区-4进程
+网格: pipe.256w.cgns
+分区数: 4, MPI进程数: 4
+ParMETIS_V3_PartMeshKway begin divide: SOLID_1_1_SOLID
+ParMETIS_V3_PartMeshKway begin divide: SOLID_1_1_SOLID
+ParMETIS_V3_PartMeshKway begin divide: SOLID_1_1_SOLID
+ParMETIS_V3_PartMeshKway begin divide: SOLID_1_1_SOLID
+ParMETIS_V3_PartMeshKway done
+ParMETIS_V3_PartMeshKway done
+ParMETIS_V3_PartMeshKway done
+ParMETIS_V3_PartMeshKway done
+  decomposed_mesh_0.cgns: write section SOLID_1_1_SOLID [642225: 1, 642225]
+  decomposed_mesh_1.cgns: write section SOLID_1_1_SOLID [642217: 1, 642217]
+  decomposed_mesh_2.cgns: write section SOLID_1_1_SOLID [641943: 1, 641943]
+  decomposed_mesh_3.cgns: write section SOLID_1_1_SOLID [642206: 1, 642206]
+  decomposed_mesh_0.cgns: write section INLET [1669: 642226, 643894]
+  decomposed_mesh_0.cgns: write section WALL [52254: 643895, 696148]
+  decomposed_mesh_3.cgns: write section OUTLET [1669: 642207, 643875]
+  decomposed_mesh_1.cgns: write section WALL [52369: 642218, 694586]
+  decomposed_mesh_2.cgns: write section WALL [52315: 641944, 694258]
+  decomposed_mesh_3.cgns: write section WALL [52366: 643876, 696241]
+  Thread 1: recv 1859 interface of file 0
+  Thread 2: recv 1859 interface of file 0
+  Thread 3: recv 1859 interface of file 0
+  Thread 0: recv 3713 interface of file 1
+  Thread 3: recv 3713 interface of file 1
+  Thread 2: recv 3713 interface of file 1
+  Thread 1: recv 3651 interface of file 2
+  Thread 0: recv 3651 interface of file 2
+  Thread 3: recv 3651 interface of file 2
+  Thread 2: recv 1797 interface of file 3
+  Thread 1: recv 1797 interface of file 3
+  Thread 0: recv 1797 interface of file 3
+close file pipe.256w.cgns
+close file pipe.256w.cgns
+close file decomposed_mesh_1.cgns
+close file pipe.256w.cgns
+close file decomposed_mesh_2.cgns
+close file pipe.256w.cgns
+close file decomposed_mesh_3.cgns
+close file decomposed_mesh_0.cgns
+  decomposed_mesh_1.cgns: write section Interface_0 [1859: 694587, 696445]
+  decomposed_mesh_2.cgns: write section Interface_1 [1854: 694259, 696112]
+  decomposed_mesh_0.cgns: write section Interface_1 [1859: 696149, 698007]
+  decomposed_mesh_3.cgns: write section Interface_2 [1797: 696242, 698038]
+close file decomposed_mesh_3.cgns
+close file decomposed_mesh_0.cgns
+  decomposed_mesh_1.cgns: write section Interface_2 [1854: 696446, 698299]
+close file decomposed_mesh_1.cgns
+  decomposed_mesh_2.cgns: write section Interface_3 [1797: 696113, 697909]
+close file decomposed_mesh_2.cgns
+执行时间: 7.710635411 秒
+生成文件数: 4
+
+----------------------------------------
+测试: 并行-8分区-4进程
+网格: pipe.256w.cgns
+分区数: 8, MPI进程数: 4
+ParMETIS_V3_PartMeshKway begin divide: SOLID_1_1_SOLID
+ParMETIS_V3_PartMeshKway begin divide: SOLID_1_1_SOLID
+ParMETIS_V3_PartMeshKway begin divide: SOLID_1_1_SOLID
+ParMETIS_V3_PartMeshKway begin divide: SOLID_1_1_SOLID
+ParMETIS_V3_PartMeshKway done
+ParMETIS_V3_PartMeshKway done
+ParMETIS_V3_PartMeshKway done
+ParMETIS_V3_PartMeshKway done
+  decomposed_mesh_4.cgns: write section SOLID_1_1_SOLID [309511: 1, 309511]
+  decomposed_mesh_2.cgns: write section SOLID_1_1_SOLID [327701: 1, 327701]
+  decomposed_mesh_6.cgns: write section SOLID_1_1_SOLID [321141: 1, 321141]
+  decomposed_mesh_0.cgns: write section SOLID_1_1_SOLID [309897: 1, 309897]
+  decomposed_mesh_4.cgns: write section INLET [1669: 309512, 311180]
+  decomposed_mesh_4.cgns: write section WALL [25297: 311181, 336477]
+  decomposed_mesh_0.cgns: write section OUTLET [1669: 309898, 311566]
+  decomposed_mesh_2.cgns: write section WALL [26817: 327702, 354518]
+  decomposed_mesh_6.cgns: write section WALL [26171: 321142, 347312]
+  decomposed_mesh_0.cgns: write section WALL [25317: 311567, 336883]
+  decomposed_mesh_5.cgns: write section SOLID_1_1_SOLID [332600: 1, 332600]
+  decomposed_mesh_7.cgns: write section SOLID_1_1_SOLID [321143: 1, 321143]
+  decomposed_mesh_3.cgns: write section SOLID_1_1_SOLID [314290: 1, 314290]
+  decomposed_mesh_1.cgns: write section SOLID_1_1_SOLID [332308: 1, 332308]
+  decomposed_mesh_5.cgns: write section WALL [26950: 332601, 359550]
+  decomposed_mesh_7.cgns: write section WALL [26201: 321144, 347344]
+  decomposed_mesh_3.cgns: write section WALL [25499: 314291, 339789]
+  decomposed_mesh_1.cgns: write section WALL [27052: 332309, 359360]
+  Thread 1: recv 4424 interface of file 1
+  Thread 2: recv 4424 interface of file 1
+  Thread 3: recv 4424 interface of file 1
+  Thread 0: recv 4405 interface of file 3
+  Thread 0: recv 4341 interface of file 2
+  Thread 1: recv 2614 interface of file 0
+  Thread 0: recv 4542 interface of file 5
+  Thread 0: recv 2714 interface of file 4
+  Thread 0: recv 4175 interface of file 7
+  Thread 1: recv 4542 interface of file 5
+  Thread 1: recv 2714 interface of file 4
+  Thread 1: recv 4175 interface of file 7
+  Thread 1: recv 4221 interface of file 6
+  Thread 2: recv 2614 interface of file 0
+  Thread 2: recv 4405 interface of file 3
+  Thread 2: recv 4341 interface of file 2
+  Thread 2: recv 4175 interface of file 7
+  Thread 3: recv 2614 interface of file 0
+  Thread 3: recv 4405 interface of file 3
+  Thread 3: recv 4341 interface of file 2
+  Thread 3: recv 4542 interface of file 5
+  Thread 0: recv 4221 interface of file 6
+  Thread 3: recv 2714 interface of file 4
+  Thread 2: recv 4221 interface of file 6
+close file pipe.256w.cgns
+close file decomposed_mesh_0.cgns
+close file decomposed_mesh_1.cgns
+close file pipe.256w.cgns
+close file decomposed_mesh_2.cgns
+close file decomposed_mesh_3.cgns
+close file pipe.256w.cgns
+close file pipe.256w.cgns
+close file decomposed_mesh_6.cgns
+close file decomposed_mesh_7.cgns
+close file decomposed_mesh_4.cgns
+close file decomposed_mesh_5.cgns
+  decomposed_mesh_0.cgns: write section Interface_1 [2614: 336884, 339497]
+  decomposed_mesh_2.cgns: write section Interface_1 [1810: 354519, 356328]
+  decomposed_mesh_6.cgns: write section Interface_3 [1874: 347313, 349186]
+  decomposed_mesh_4.cgns: write section Interface_5 [2714: 336478, 339191]
+  decomposed_mesh_1.cgns: write section Interface_0 [2614: 359361, 361974]
+  decomposed_mesh_2.cgns: write section Interface_3 [2531: 356329, 358859]
+  decomposed_mesh_3.cgns: write section Interface_2 [2531: 339790, 342320]
+close file decomposed_mesh_3.cgns
+close file decomposed_mesh_2.cgns
+  decomposed_mesh_5.cgns: write section Interface_4 [2714: 359551, 362264]
+close file decomposed_mesh_5.cgns
+close file decomposed_mesh_4.cgns
+  decomposed_mesh_6.cgns: write section Interface_7 [2347: 349187, 351533]
+  decomposed_mesh_7.cgns: write section Interface_6 [2347: 347345, 349691]
+close file decomposed_mesh_7.cgns
+close file decomposed_mesh_6.cgns
+close file decomposed_mesh_1.cgns
+close file decomposed_mesh_0.cgns
+  decomposed_mesh_1.cgns: write section Interface_2 [1810: 359361, 361170]
+  decomposed_mesh_3.cgns: write section Interface_6 [1874: 339790, 341663]
+close file decomposed_mesh_3.cgns
+  decomposed_mesh_5.cgns: write section Interface_7 [1828: 359551, 361378]
+close file decomposed_mesh_5.cgns
+  decomposed_mesh_7.cgns: write section Interface_5 [1828: 347345, 349172]
+close file decomposed_mesh_7.cgns
+close file decomposed_mesh_1.cgns
+执行时间: 7.357941363 秒
+生成文件数: 8
+
+========== 测试3: 大网格性能测试 ==========
+网格文件: pipe.512w.cgns (大小: 305M)
+
+----------------------------------------
+测试: 并行-2分区-2进程
+网格: pipe.512w.cgns
+分区数: 2, MPI进程数: 2
+ParMETIS_V3_PartMeshKway begin divide: SOLID_1_1_SOLID
+ParMETIS_V3_PartMeshKway begin divide: SOLID_1_1_SOLID
+ParMETIS_V3_PartMeshKway done
+ParMETIS_V3_PartMeshKway done
+  decomposed_mesh_0.cgns: write section SOLID_1_1_SOLID [2516144: 1, 2516144]
+  decomposed_mesh_1.cgns: write section SOLID_1_1_SOLID [2600625: 1, 2600625]
+  decomposed_mesh_0.cgns: write section INLET [2149: 2516145, 2518293]
+  decomposed_mesh_1.cgns: write section OUTLET [2149: 2600626, 2602774]
+  decomposed_mesh_0.cgns: write section WALL [182651: 2518294, 2700944]
+  decomposed_mesh_1.cgns: write section WALL [188785: 2602775, 2791559]
+  Thread 0: recv 3116 interface of file 1
+  Thread 1: recv 3116 interface of file 0
+close file pipe.512w.cgns
+close file decomposed_mesh_0.cgns
+close file pipe.512w.cgns
+close file decomposed_mesh_1.cgns
+  decomposed_mesh_1.cgns: write section Interface_0 [3116: 2791560, 2794675]
+close file decomposed_mesh_1.cgns
+  decomposed_mesh_0.cgns: write section Interface_1 [3116: 2700945, 2704060]
+close file decomposed_mesh_0.cgns
+执行时间: 26.270071512 秒
+生成文件数: 2
+
+----------------------------------------
+测试: 并行-4分区-2进程
+网格: pipe.512w.cgns
+分区数: 4, MPI进程数: 2
+ParMETIS_V3_PartMeshKway begin divide: SOLID_1_1_SOLID
+ParMETIS_V3_PartMeshKway begin divide: SOLID_1_1_SOLID
+ParMETIS_V3_PartMeshKway done
+ParMETIS_V3_PartMeshKway done
+  decomposed_mesh_2.cgns: write section SOLID_1_1_SOLID [1252663: 1, 1252663]
+  decomposed_mesh_0.cgns: write section SOLID_1_1_SOLID [1326812: 1, 1326812]
+  decomposed_mesh_2.cgns: write section WALL [91054: 1252664, 1343717]
+  decomposed_mesh_0.cgns: write section WALL [96226: 1326813, 1423038]
+  decomposed_mesh_1.cgns: write section SOLID_1_1_SOLID [1227696: 1, 1227696]
+  decomposed_mesh_3.cgns: write section SOLID_1_1_SOLID [1309598: 1, 1309598]
+  decomposed_mesh_1.cgns: write section OUTLET [2149: 1227697, 1229845]
+  decomposed_mesh_3.cgns: write section INLET [2149: 1309599, 1311747]
+  decomposed_mesh_1.cgns: write section WALL [89149: 1229846, 1318994]
+  decomposed_mesh_3.cgns: write section WALL [95007: 1311748, 1406754]
+  Thread 1: recv 3132 interface of file 1
+  Thread 0: recv 3122 interface of file 3
+  Thread 1: recv 6010 interface of file 0
+  Thread 0: recv 6000 interface of file 2
+close file pipe.512w.cgns
+close file decomposed_mesh_0.cgns
+close file pipe.512w.cgns
+close file decomposed_mesh_2.cgns
+close file decomposed_mesh_3.cgns
+close file decomposed_mesh_1.cgns
+  decomposed_mesh_2.cgns: write section Interface_0 [2878: 1343718, 1346595]
+  decomposed_mesh_0.cgns: write section Interface_1 [3132: 1423039, 1426170]
+  decomposed_mesh_1.cgns: write section Interface_0 [3132: 1318995, 1322126]
+close file decomposed_mesh_1.cgns
+  decomposed_mesh_2.cgns: write section Interface_3 [3122: 1346596, 1349717]
+  decomposed_mesh_0.cgns: write section Interface_2 [2878: 1426171, 1429048]
+close file decomposed_mesh_0.cgns
+close file decomposed_mesh_1.cgns
+  decomposed_mesh_3.cgns: write section Interface_2 [3122: 1406755, 1409876]
+close file decomposed_mesh_3.cgns
+close file decomposed_mesh_2.cgns
+close file decomposed_mesh_3.cgns
+执行时间: 26.354049301 秒
+生成文件数: 4
+
+----------------------------------------
+测试: 并行-4分区-4进程
+网格: pipe.512w.cgns
+分区数: 4, MPI进程数: 4
+ParMETIS_V3_PartMeshKway begin divide: SOLID_1_1_SOLID
+ParMETIS_V3_PartMeshKway begin divide: SOLID_1_1_SOLID
+ParMETIS_V3_PartMeshKway begin divide: SOLID_1_1_SOLID
+ParMETIS_V3_PartMeshKway begin divide: SOLID_1_1_SOLID
+ParMETIS_V3_PartMeshKway done
+ParMETIS_V3_PartMeshKway done
+ParMETIS_V3_PartMeshKway done
+ParMETIS_V3_PartMeshKway done
+  decomposed_mesh_3.cgns: write section SOLID_1_1_SOLID [1279198: 1, 1279198]
+  decomposed_mesh_1.cgns: write section SOLID_1_1_SOLID [1279186: 1, 1279186]
+  decomposed_mesh_0.cgns: write section SOLID_1_1_SOLID [1279189: 1, 1279189]
+  decomposed_mesh_2.cgns: write section SOLID_1_1_SOLID [1279196: 1, 1279196]
+  decomposed_mesh_3.cgns: write section OUTLET [2149: 1279199, 1281347]
+  decomposed_mesh_0.cgns: write section INLET [2149: 1279190, 1281338]
+  decomposed_mesh_3.cgns: write section WALL [92956: 1281348, 1374303]
+  decomposed_mesh_1.cgns: write section WALL [92822: 1279187, 1372008]
+  decomposed_mesh_0.cgns: write section WALL [92818: 1281339, 1374156]
+  decomposed_mesh_2.cgns: write section WALL [92840: 1279197, 1372036]
+  Thread 1: recv 2271 interface of file 0
+  Thread 2: recv 2271 interface of file 0
+  Thread 3: recv 2271 interface of file 0
+  Thread 0: recv 4582 interface of file 1
+  Thread 2: recv 4582 interface of file 1
+  Thread 0: recv 4682 interface of file 2
+  Thread 0: recv 2371 interface of file 3
+  Thread 1: recv 4682 interface of file 2
+  Thread 1: recv 2371 interface of file 3
+  Thread 2: recv 2371 interface of file 3
+  Thread 3: recv 4582 interface of file 1
+  Thread 3: recv 4682 interface of file 2
+close file pipe.512w.cgns
+close file decomposed_mesh_0.cgns
+close file pipe.512w.cgns
+close file decomposed_mesh_1.cgns
+close file pipe.512w.cgns
+close file pipe.512w.cgns
+close file decomposed_mesh_3.cgns
+close file decomposed_mesh_2.cgns
+  decomposed_mesh_0.cgns: write section Interface_1 [2271: 1374157, 1376427]
+close file decomposed_mesh_0.cgns
+  decomposed_mesh_1.cgns: write section Interface_0 [2271: 1372009, 1374279]
+  decomposed_mesh_3.cgns: write section Interface_2 [2371: 1374304, 1376674]
+close file decomposed_mesh_3.cgns
+  decomposed_mesh_1.cgns: write section Interface_2 [2311: 1374280, 1376590]
+close file decomposed_mesh_1.cgns
+  decomposed_mesh_2.cgns: write section Interface_1 [2311: 1372037, 1374347]
+  decomposed_mesh_2.cgns: write section Interface_3 [2371: 1374348, 1376718]
+close file decomposed_mesh_2.cgns
+执行时间: 16.045589572 秒
+生成文件数: 4
+
+----------------------------------------
+测试: 并行-8分区-4进程
+网格: pipe.512w.cgns
+分区数: 8, MPI进程数: 4
+ParMETIS_V3_PartMeshKway begin divide: SOLID_1_1_SOLID
+ParMETIS_V3_PartMeshKway begin divide: SOLID_1_1_SOLID
+ParMETIS_V3_PartMeshKway begin divide: SOLID_1_1_SOLID
+ParMETIS_V3_PartMeshKway begin divide: SOLID_1_1_SOLID
+ParMETIS_V3_PartMeshKway done
+ParMETIS_V3_PartMeshKway done
+ParMETIS_V3_PartMeshKway done
+ParMETIS_V3_PartMeshKway done
+  decomposed_mesh_4.cgns: write section SOLID_1_1_SOLID [645164: 1, 645164]
+  decomposed_mesh_6.cgns: write section SOLID_1_1_SOLID [639780: 1, 639780]
+  decomposed_mesh_0.cgns: write section SOLID_1_1_SOLID [664922: 1, 664922]
+  decomposed_mesh_2.cgns: write section SOLID_1_1_SOLID [648732: 1, 648732]
+  decomposed_mesh_6.cgns: write section INLET [2149: 639781, 641929]
+  decomposed_mesh_4.cgns: write section WALL [46893: 645165, 692057]
+  decomposed_mesh_6.cgns: write section WALL [46404: 641930, 688333]
+  decomposed_mesh_0.cgns: write section WALL [48214: 664923, 713136]
+  decomposed_mesh_2.cgns: write section WALL [47126: 648733, 695858]
+  decomposed_mesh_5.cgns: write section SOLID_1_1_SOLID [633878: 1, 633878]
+  decomposed_mesh_1.cgns: write section SOLID_1_1_SOLID [614638: 1, 614638]
+  decomposed_mesh_7.cgns: write section SOLID_1_1_SOLID [639583: 1, 639583]
+  decomposed_mesh_3.cgns: write section SOLID_1_1_SOLID [630072: 1, 630072]
+  decomposed_mesh_5.cgns: write section WALL [45922: 633879, 679800]
+  decomposed_mesh_3.cgns: write section OUTLET [2149: 630073, 632221]
+  decomposed_mesh_1.cgns: write section WALL [44663: 614639, 659301]
+  decomposed_mesh_7.cgns: write section WALL [46421: 639584, 686004]
+  decomposed_mesh_3.cgns: write section WALL [45793: 632222, 678014]
+  Thread 1: recv 5649 interface of file 1
+  Thread 2: recv 5649 interface of file 1
+  Thread 3: recv 5649 interface of file 1
+  Thread 0: recv 3016 interface of file 3
+  Thread 0: recv 5450 interface of file 2
+  Thread 1: recv 5534 interface of file 0
+  Thread 2: recv 5534 interface of file 0
+  Thread 3: recv 5534 interface of file 0
+  Thread 1: recv 5476 interface of file 5
+  Thread 2: recv 3016 interface of file 3
+  Thread 3: recv 3016 interface of file 3
+  Thread 0: recv 5476 interface of file 5
+  Thread 2: recv 5450 interface of file 2
+  Thread 3: recv 5450 interface of file 2
+  Thread 0: recv 5519 interface of file 4
+  Thread 1: recv 5519 interface of file 4
+  Thread 1: recv 5257 interface of file 7
+  Thread 2: recv 5257 interface of file 7
+  Thread 3: recv 5476 interface of file 5
+  Thread 2: recv 2895 interface of file 6
+  Thread 3: recv 5519 interface of file 4
+  Thread 0: recv 5257 interface of file 7
+  Thread 1: recv 2895 interface of file 6
+  Thread 0: recv 2895 interface of file 6
+close file pipe.512w.cgns
+close file decomposed_mesh_0.cgns
+close file decomposed_mesh_1.cgns
+close file pipe.512w.cgns
+close file pipe.512w.cgns
+close file decomposed_mesh_4.cgns
+close file decomposed_mesh_5.cgns
+close file pipe.512w.cgns
+close file decomposed_mesh_6.cgns
+close file decomposed_mesh_7.cgns
+close file decomposed_mesh_2.cgns
+close file decomposed_mesh_3.cgns
+  decomposed_mesh_2.cgns: write section Interface_1 [2434: 695859, 698292]
+  decomposed_mesh_0.cgns: write section Interface_1 [3215: 713137, 716351]
+  decomposed_mesh_4.cgns: write section Interface_5 [3157: 692058, 695214]
+  decomposed_mesh_2.cgns: write section Interface_3 [3016: 698293, 701308]
+  decomposed_mesh_3.cgns: write section Interface_2 [3016: 678015, 681030]
+close file decomposed_mesh_3.cgns
+  decomposed_mesh_5.cgns: write section Interface_4 [3157: 679801, 682957]
+close file decomposed_mesh_5.cgns
+  decomposed_mesh_6.cgns: write section Interface_7 [2895: 688334, 691228]
+  decomposed_mesh_7.cgns: write section Interface_6 [2895: 686005, 688899]
+close file decomposed_mesh_7.cgns
+  decomposed_mesh_1.cgns: write section Interface_0 [3215: 659302, 662516]
+close file decomposed_mesh_6.cgns
+close file decomposed_mesh_1.cgns
+close file decomposed_mesh_2.cgns
+close file decomposed_mesh_3.cgns
+  decomposed_mesh_4.cgns: write section Interface_7 [2362: 695215, 697576]
+close file decomposed_mesh_4.cgns
+  decomposed_mesh_7.cgns: write section Interface_4 [2362: 686005, 688366]
+close file decomposed_mesh_7.cgns
+  decomposed_mesh_0.cgns: write section Interface_5 [2319: 716352, 718670]
+  decomposed_mesh_5.cgns: write section Interface_0 [2319: 679801, 682119]
+close file decomposed_mesh_0.cgns
+close file decomposed_mesh_5.cgns
+  decomposed_mesh_1.cgns: write section Interface_2 [2434: 659302, 661735]
+close file decomposed_mesh_1.cgns
+执行时间: 15.553447228 秒
+生成文件数: 8
+
+========================================
+性能测试完成
+结果保存在: performance_results.txt
+========================================

@@ -208,7 +208,25 @@ CGFile::CGFile(string filename, int mode) : filename_(filename)
         coordname_.push_back("CoordinateX");
         coordname_.push_back("CoordinateY");
         coordname_.push_back("CoordinateZ");
-        // 暂时跳过读取已有 section，后续可能需要手动设置 idOffset_
+        // 读取已有 section 并计算最大元素 ID
+        {
+            int nSection;
+            int ret = cg_nsections(fp, ibase, izone, &nSection);
+            cgsize_t maxEndId = 0;
+            for (int i = 1; i <= nSection; ++i)
+            {
+                char name[33];
+                ElementType_t type;
+                cgsize_t start, end;
+                int nbndry, parent_flag;
+                ret = cg_section_read(fp, ibase, izone, i, name, &type, &start, &end, &nbndry, &parent_flag);
+                if (ret == CG_OK)
+                {
+                    maxEndId = std::max(maxEndId, end);
+                }
+            }
+            idOffset_ = maxEndId + 1;
+        }
         break;
     default: break;
     }
