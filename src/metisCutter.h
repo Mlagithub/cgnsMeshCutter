@@ -6,7 +6,7 @@
 
 #ifdef SUPPORT_METIS
 #include <metis.h>
-#else 
+#else
     typedef int64_t idx_t;
 #endif
 
@@ -15,7 +15,6 @@
 
 using std::map;
 using std::unordered_map;
-
 
 namespace MeshCut
 {
@@ -34,6 +33,7 @@ private:
     cgns_filetype bigMesh_;
     vector<cgns_filetype> smallMesh_;
     map<int, map<cgsize_t, cgsize_t>> nodeIdG2L_;
+    map<int, cgsize_t> maxElemId_; // 每个分区的最大元素 ID
     set<cgsize_t> nodeIds_, cellIds_;
     vector<idx_t> cellPartition_, nodePartition_;
     unordered_map<int, map<string, vector<cgsize_t>>> outerFace_;
@@ -52,7 +52,9 @@ private:
 
 private:
     void collect_interface();
-    
+    void collect_nodeIdG2L(const int np);
+    void collect_maxElemId(const int np);
+
     vector<Cell> collect_subBody(const DecomposeResult& decomposeResult, const vector<int>& ownerThread);
 
     void cut_metis(string mesh, const int np);

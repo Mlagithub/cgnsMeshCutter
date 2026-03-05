@@ -2,7 +2,6 @@
 #include <cmath>
 #include <cstring>
 #include <ctime>
-#include <numeric>
 
 #include <cgns_io.h>
 #include <parmetis.h>
@@ -50,7 +49,7 @@ void MetisCutter::cut(int argc, char **argv)
 }
 
 // collect interface from all other threads
-// 优化：使用二进制数据传输替代字符串序列化
+// 优化：使用二进制数据传输，减少字符串操作开销
 void MetisCutter::collect_interface()
 {
     // 打包：二进制格式 [fileId(int)][count(int)][faceStr1][faceStr2]...
@@ -96,12 +95,11 @@ void MetisCutter::collect_interface()
     }
 
     std::vector<char> recvBuf(totalRecv);
-    MPI_Allgatherv(sendBuf.data(), sendCnt, MPI_CHAR,
-                   recvBuf.data(), recvCnt.data(), rdisp.data(), MPI_CHAR, MPI_COMM_WORLD);
+    MPI_Allgatherv(sendBuf.data(), sendCnt, MPI_CHAR, recvBuf.data(), recvCnt.data(), rdisp.data(), MPI_CHAR, MPI_COMM_WORLD);
 
     MPIAdapter::Barrier();
 
-    // 解包
+    // 解包 - 只处理不属于当前进程的 fileId
     size_t pos = 0;
     while (pos + 2 * sizeof(int) <= recvBuf.size())
     {
@@ -113,6 +111,7 @@ void MetisCutter::collect_interface()
         std::memcpy(&count, recvBuf.data() + pos, sizeof(int));
         pos += sizeof(int);
 
+        // 如果这个文件属于当前进程，跳过（因为已经有了）
         if (ownerFile_.count(fileId) != 0)
         {
             for (int i = 0; i < count; ++i)
@@ -131,6 +130,139 @@ void MetisCutter::collect_interface()
             std::string faceStr(recvBuf.data() + pos);
             nbrOuterface.insert({faceStr, {}});
             pos += faceStr.size() + 1;
+        }
+    }
+}
+
+// collect nodeIdG2L_ from all other threads for interface writing
+void MetisCutter::collect_nodeIdG2L(const int np)
+{
+    // 打包：格式 [fileId(int)][count(int)][gId1][lId1][gId2][lId2]...
+    std::vector<char> sendBuf;
+    sendBuf.reserve(ownerFile_.size() * 1024);
+
+    for (auto fileId : ownerFile_)
+    {
+        auto &g2l = nodeIdG2L_[fileId];
+        if (g2l.empty()) continue;
+
+        size_t pos = sendBuf.size();
+        sendBuf.resize(pos + sizeof(int));
+        std::memcpy(sendBuf.data() + pos, &fileId, sizeof(int));
+
+        int count = g2l.size();
+        pos = sendBuf.size();
+        sendBuf.resize(pos + sizeof(int));
+        std::memcpy(sendBuf.data() + pos, &count, sizeof(int));
+
+        for (const auto &kv : g2l)
+        {
+            cgsize_t gId = kv.first;
+            cgsize_t lId = kv.second;
+            pos = sendBuf.size();
+            sendBuf.resize(pos + 2 * sizeof(cgsize_t));
+            std::memcpy(sendBuf.data() + pos, &gId, sizeof(cgsize_t));
+            std::memcpy(sendBuf.data() + pos + sizeof(cgsize_t), &lId, sizeof(cgsize_t));
+        }
+    }
+
+    int sendCnt = sendBuf.size();
+    vector<int> recvCnt(SIZE, 0);
+    MPI_Allgather(&sendCnt, 1, MPI_INT, recvCnt.data(), 1, MPI_INT, MPI_COMM_WORLD);
+
+    vector<int> rdisp(SIZE, 0);
+    int totalRecv = recvCnt[0];
+    for (int i = 1; i < SIZE; ++i)
+    {
+        rdisp[i] = rdisp[i - 1] + recvCnt[i - 1];
+        totalRecv += recvCnt[i];
+    }
+
+    std::vector<char> recvBuf(totalRecv);
+    MPI_Allgatherv(sendBuf.data(), sendCnt, MPI_CHAR, recvBuf.data(), recvCnt.data(), rdisp.data(), MPI_CHAR, MPI_COMM_WORLD);
+
+    // 解包 - 跳过当前进程已拥有的
+    size_t pos = 0;
+    while (pos + 2 * sizeof(int) <= recvBuf.size())
+    {
+        int fileId;
+        std::memcpy(&fileId, recvBuf.data() + pos, sizeof(int));
+        pos += sizeof(int);
+
+        int count;
+        std::memcpy(&count, recvBuf.data() + pos, sizeof(int));
+        pos += sizeof(int);
+
+        // 如果这个文件当前进程已拥有，跳过
+        if (ownerFile_.count(fileId) != 0)
+        {
+            pos += count * 2 * sizeof(cgsize_t);
+            continue;
+        }
+
+        auto &g2l = nodeIdG2L_[fileId];
+        for (int i = 0; i < count; ++i)
+        {
+            cgsize_t gId, lId;
+            std::memcpy(&gId, recvBuf.data() + pos, sizeof(cgsize_t));
+            std::memcpy(&lId, recvBuf.data() + pos + sizeof(cgsize_t), sizeof(cgsize_t));
+            pos += 2 * sizeof(cgsize_t);
+            g2l.insert({gId, lId});
+        }
+    }
+}
+
+// collect maxElemId_ from all other threads for interface writing
+void MetisCutter::collect_maxElemId(const int np)
+{
+    // 打包：格式 [fileId(int)][maxId(cgsize_t)]...
+    std::vector<char> sendBuf;
+    sendBuf.reserve(ownerFile_.size() * (sizeof(int) + sizeof(cgsize_t)));
+
+    for (auto fileId : ownerFile_)
+    {
+        if (maxElemId_.count(fileId) == 0) continue;
+        cgsize_t maxId = maxElemId_[fileId];
+
+        size_t pos = sendBuf.size();
+        sendBuf.resize(pos + sizeof(int));
+        std::memcpy(sendBuf.data() + pos, &fileId, sizeof(int));
+
+        pos = sendBuf.size();
+        sendBuf.resize(pos + sizeof(cgsize_t));
+        std::memcpy(sendBuf.data() + pos, &maxId, sizeof(cgsize_t));
+    }
+
+    int sendCnt = sendBuf.size();
+    vector<int> recvCnt(SIZE, 0);
+    MPI_Allgather(&sendCnt, 1, MPI_INT, recvCnt.data(), 1, MPI_INT, MPI_COMM_WORLD);
+
+    vector<int> rdisp(SIZE, 0);
+    int totalRecv = recvCnt[0];
+    for (int i = 1; i < SIZE; ++i)
+    {
+        rdisp[i] = rdisp[i - 1] + recvCnt[i - 1];
+        totalRecv += recvCnt[i];
+    }
+
+    std::vector<char> recvBuf(totalRecv);
+    MPI_Allgatherv(sendBuf.data(), sendCnt, MPI_CHAR, recvBuf.data(), recvCnt.data(), rdisp.data(), MPI_CHAR, MPI_COMM_WORLD);
+
+    // 解包
+    size_t pos = 0;
+    while (pos + sizeof(int) + sizeof(cgsize_t) <= recvBuf.size())
+    {
+        int fileId;
+        std::memcpy(&fileId, recvBuf.data() + pos, sizeof(int));
+        pos += sizeof(int);
+
+        cgsize_t maxId;
+        std::memcpy(&maxId, recvBuf.data() + pos, sizeof(cgsize_t));
+        pos += sizeof(cgsize_t);
+
+        if (ownerFile_.count(fileId) == 0)
+        {
+            maxElemId_[fileId] = maxId;
         }
     }
 }
@@ -164,8 +296,7 @@ vector<MetisCutter::Cell> MetisCutter::collect_subBody(const MetisCutter::Decomp
 
     // Step 2: 交换发送/接收计数
     vector<int> sendCounts(SIZE), recvCounts(SIZE);
-    for (int i = 0; i < SIZE; ++i)
-        sendCounts[i] = sendBuffers[i].size() * sizeof(Cell);
+    for (int i = 0; i < SIZE; ++i) sendCounts[i] = sendBuffers[i].size() * sizeof(Cell);
 
     MPI_Alltoall(sendCounts.data(), 1, MPI_INT, recvCounts.data(), 1, MPI_INT, MPI_COMM_WORLD);
 
@@ -190,17 +321,13 @@ vector<MetisCutter::Cell> MetisCutter::collect_subBody(const MetisCutter::Decomp
     vector<char> sendBuf(totalSendBytes);
     for (int i = 0; i < SIZE; ++i)
     {
-        if (sendCounts[i] > 0)
-        {
-            std::memcpy(sendBuf.data() + sendDispls[i], sendBuffers[i].data(), sendCounts[i]);
-        }
+        if (sendCounts[i] > 0) { std::memcpy(sendBuf.data() + sendDispls[i], sendBuffers[i].data(), sendCounts[i]); }
         vector<Cell>{}.swap(sendBuffers[i]); // free
     }
 
     // Step 5: Alltoallv 一次通信
     vector<char> recvBuf(totalRecvBytes);
-    MPI_Alltoallv(sendBuf.data(), sendCounts.data(), sendDispls.data(), MPI_CHAR,
-                  recvBuf.data(), recvCounts.data(), recvDispls.data(), MPI_CHAR, MPI_COMM_WORLD);
+    MPI_Alltoallv(sendBuf.data(), sendCounts.data(), sendDispls.data(), MPI_CHAR, recvBuf.data(), recvCounts.data(), recvDispls.data(), MPI_CHAR, MPI_COMM_WORLD);
 
     // Step 6: 解包接收数据
     for (int i = 0; i < SIZE; ++i)
@@ -208,9 +335,8 @@ vector<MetisCutter::Cell> MetisCutter::collect_subBody(const MetisCutter::Decomp
         if (recvCounts[i] > 0)
         {
             int numCells = recvCounts[i] / sizeof(Cell);
-            Cell* cells = reinterpret_cast<Cell*>(recvBuf.data() + recvDispls[i]);
-            for (int j = 0; j < numCells; ++j)
-                localCells.push_back(cells[j]);
+            Cell *cells = reinterpret_cast<Cell *>(recvBuf.data() + recvDispls[i]);
+            for (int j = 0; j < numCells; ++j) localCells.push_back(cells[j]);
         }
     }
 
@@ -325,10 +451,7 @@ void MetisCutter::cut_parmetis(string meshFilename, const int np)
     {
         int partId = kv.first;
         int targetRank = ownerThread_[partId];
-        if (targetRank != RANK)
-        {
-            sendCounts[targetRank] = kv.second.size() * sizeof(Cell);
-        }
+        if (targetRank != RANK) { sendCounts[targetRank] += kv.second.size() * sizeof(Cell); }
         else
         {
             myCells.insert(myCells.end(), kv.second.begin(), kv.second.end());
@@ -354,22 +477,18 @@ void MetisCutter::cut_parmetis(string meshFilename, const int np)
         int targetRank = ownerThread_[partId];
         if (targetRank != RANK)
         {
-            char* ptr = sendBuf.data() + sendDispls[targetRank];
+            char *ptr = sendBuf.data() + sendDispls[targetRank];
             std::memcpy(ptr, kv.second.data(), kv.second.size() * sizeof(Cell));
             sendDispls[targetRank] += kv.second.size() * sizeof(Cell);
         }
     }
 
     // 重置位移
-    for (int i = 0; i < SIZE; ++i)
-    {
-        sendDispls[i] = (i == 0) ? 0 : sendDispls[i - 1] + sendCounts[i - 1];
-    }
+    for (int i = 0; i < SIZE; ++i) { sendDispls[i] = (i == 0) ? 0 : sendDispls[i - 1] + sendCounts[i - 1]; }
 
     // 3.3 交换数据
     vector<char> recvBuf(totalRecv);
-    MPI_Alltoallv(sendBuf.data(), sendCounts.data(), sendDispls.data(), MPI_CHAR,
-                  recvBuf.data(), recvCounts.data(), recvDispls.data(), MPI_CHAR, MPI_COMM_WORLD);
+    MPI_Alltoallv(sendBuf.data(), sendCounts.data(), sendDispls.data(), MPI_CHAR, recvBuf.data(), recvCounts.data(), recvDispls.data(), MPI_CHAR, MPI_COMM_WORLD);
 
     // 3.4 解包接收数据
     for (int i = 0; i < SIZE; ++i)
@@ -377,9 +496,8 @@ void MetisCutter::cut_parmetis(string meshFilename, const int np)
         if (recvCounts[i] > 0)
         {
             int numCells = recvCounts[i] / sizeof(Cell);
-            Cell* cells = reinterpret_cast<Cell*>(recvBuf.data() + recvDispls[i]);
-            for (int j = 0; j < numCells; ++j)
-                myCells.push_back(cells[j]);
+            Cell *cells = reinterpret_cast<Cell *>(recvBuf.data() + recvDispls[i]);
+            for (int j = 0; j < numCells; ++j) myCells.push_back(cells[j]);
         }
     }
 
@@ -389,10 +507,7 @@ void MetisCutter::cut_parmetis(string meshFilename, const int np)
     recvBuf.clear();
 
     // Step 4: 处理本地数据
-    if (myCells.empty())
-    {
-        std::cout << format("Thread %d has no subBody\n", RANK);
-    }
+    if (myCells.empty()) { std::cout << format("Thread %d has no subBody\n", RANK); }
 
     std::sort(myCells.begin(), myCells.end(), comPartId);
     auto pos = myCells.begin();
@@ -414,8 +529,7 @@ void MetisCutter::cut_parmetis(string meshFilename, const int np)
         for (auto it = lastPos; it != pos; ++it)
         {
             cellIds_.insert(it->id);
-            for (auto node : curBody.cell(it->id))
-                nodeIds_.insert(node);
+            for (auto node : curBody.cell(it->id)) nodeIds_.insert(node);
         }
 
         nodeIdG2L_.insert({ifile, {}});
@@ -437,15 +551,26 @@ void MetisCutter::cut_parmetis(string meshFilename, const int np)
     // Step 5: 收集并写入界面
     this->collect_interface();
 
-    // write interface
-    for (auto ifile : ownerFile_) this->writeInterface(ifile, np);
+    // 收集所有分区的 nodeIdG2L_，用于写入 interface 到不属于自己的分区
+    this->collect_nodeIdG2L(np);
 
-    // clear
+    // 收集所有分区的 maxElemId_
+    this->collect_maxElemId(np);
+
+    // 先关闭所有文件，然后再以修改模式打开写入 interface
     bigMesh_->close();
     for (auto it : smallMesh_)
-        if (it != nullptr) it->close();
+        if (it != nullptr)
+        {
+            it->close();
+            it.reset();
+        }
 
+    // 确保所有进程都完成关闭后再写入界面
     MPIAdapter::Barrier();
+
+    // write interface
+    for (auto ifile : ownerFile_) this->writeInterface(ifile, np);
 }
 
 int MetisCutter::cut_metis(const vector<vector<idx_t>> &cellToplogy, idx_t np, vector<idx_t> &cellPartition, vector<idx_t> &nodePartition)
@@ -520,16 +645,13 @@ MetisCutter::DecomposeResult MetisCutter::decompose_body(const CGFile::Section &
     // 预计算节点总数并预分配内存，避免多次重分配
     size_t totalNodes = 0;
     idx_t beg = shareBigbody.isMixed() ? 1 : 0;
-    for (auto id = result.start; id < result.start + result.nCellThisRank; ++id)
-    {
-        totalNodes += shareBigbody.cell(id).size() - beg;
-    }
-    
+    for (auto id = result.start; id < result.start + result.nCellThisRank; ++id) { totalNodes += shareBigbody.cell(id).size() - beg; }
+
     std::vector<idx_t> eind, eptr;
     eind.reserve(totalNodes);
     eptr.reserve(result.nCellThisRank + 1);
     eptr.push_back(0);
-    
+
     for (auto id = result.start; id < result.start + result.nCellThisRank; ++id)
     {
         auto &tmp = shareBigbody.cell(id);
@@ -590,6 +712,9 @@ void MetisCutter::rwBody(const int ifile, const CGFile::Section &bigBody)
     // write data
     subFile->writeSection(curS, nodeIdG2L_[ifile]);
 
+    // 更新最大元素 ID
+    maxElemId_[ifile] = curS.end;
+
     // global info
     auto len = curS.end - curS.start + 1;
     subFile->writeGlobalInfo(curS, bigBody.data.size(), globalOffset_, globalOffset_ + len);
@@ -626,7 +751,11 @@ void MetisCutter::rwBoundary(const int ifile)
             }
         }
 
-        if (!subBdy.data.empty()) subFile->writeSection(subBdy, nodeIdG2L_[ifile]);
+        if (!subBdy.data.empty())
+        {
+            subFile->writeSection(subBdy, nodeIdG2L_[ifile]);
+            maxElemId_[ifile] = subBdy.end;
+        }
 
         // clear
         subBdy.clear();
@@ -748,10 +877,7 @@ void MetisCutter::updateOuterFace(const CGFile::Section &curS, const int ifile)
         {
             auto val = CGFile::stringAFace(face);
             auto it = curOuterFace.find(val);
-            if (it != curOuterFace.end())
-            {
-                curOuterFace.erase(it);
-            }
+            if (it != curOuterFace.end()) { curOuterFace.erase(it); }
             else
             {
                 curOuterFace.insert({std::move(val), face});
@@ -769,18 +895,24 @@ void MetisCutter::writeGlobalInfo(const CGFile::Section &curS, const int id)
 
 void MetisCutter::writeInterface(const int id, const int np)
 {
-    auto &subFile = smallMesh_[id];
     auto &curOuterFace = outerFace_[id];
 
+    // 当前分区文件
+    std::string curFilename = this->smallMeshName("", id, np);
+    CGFile curFile(curFilename, CG_MODE_MODIFY);
+    curFile.setIdOffset(maxElemId_[id] + 1);
+
+    // 遍历所有其他分区
     for (auto nbr = 0; nbr < np; ++nbr)
     {
         if (nbr == id) continue;
-        auto nbrIsOwner = ownerFile_.count(nbr) != 0;
+        if (outerFace_.find(nbr) == outerFace_.end()) continue;
+        if (outerFace_[nbr].empty()) continue;
 
         auto &nbrOuterFace = outerFace_[nbr];
 
         set<cgsize_t> typeFlags;
-        CGFile::Section curS, nbrS;
+        CGFile::Section curS;
         for (auto face = nbrOuterFace.begin(); face != nbrOuterFace.end();)
         {
             auto it = curOuterFace.find(face->first);
@@ -791,37 +923,29 @@ void MetisCutter::writeInterface(const int id, const int np)
                 curS.typeFlag.push_back(t);
                 typeFlags.insert(it->second.size());
                 it = curOuterFace.erase(it);
-
-                if (nbrIsOwner)
-                {
-                    nbrS.data.push_back(face->second);
-                    nbrS.typeFlag.push_back(t);
-                    face = nbrOuterFace.erase(face);
-                }
+                face = nbrOuterFace.erase(face);
             }
             else
             {
                 ++face;
             }
         }
+
         if (!curS.data.empty())
         {
-            strcpy(curS.name, format("Interface_%d", nbr).c_str());
-            if (nbrIsOwner) strcpy(nbrS.name, format("Interface_%d", id).c_str());
-
+            // 设置单元类型
             if (typeFlags.size() > 1)
             {
                 curS.cellType = ElementType_t::MIXED;
-                if (nbrIsOwner) nbrS.cellType = ElementType_t::MIXED;
             }
             else if (typeFlags.size() == 1)
             {
-                auto type = (*typeFlags.begin() == 3) ? ElementType_t::TRI_3 : ElementType_t::QUAD_4;
-                curS.cellType = type;
-                if (nbrIsOwner) nbrS.cellType = type;
+                curS.cellType = (*typeFlags.begin() == 3) ? ElementType_t::TRI_3 : ElementType_t::QUAD_4;
             }
-            subFile->writeSection(curS, nodeIdG2L_[id]);
-            if (nbrIsOwner) smallMesh_[nbr]->writeSection(nbrS, nodeIdG2L_[nbr]);
+
+            // 写入当前分区的 interface
+            strcpy(curS.name, format("Interface_%d", nbr).c_str());
+            curFile.writeSection(curS, nodeIdG2L_[id]);
         }
 
         // clear
@@ -829,6 +953,8 @@ void MetisCutter::writeInterface(const int id, const int np)
         vector<cgsize_t>{}.swap(curS.offset);
         vector<cgsize_t>{}.swap(curS.typeFlag);
     }
+
+    curFile.close();
 }
 
 } // namespace MeshCut

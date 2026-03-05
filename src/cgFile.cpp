@@ -203,6 +203,13 @@ CGFile::CGFile(string filename, int mode) : filename_(filename)
         coordname_.push_back("CoordinateY");
         coordname_.push_back("CoordinateZ");
         break;
+    case CG_MODE_MODIFY:
+        check(cg_open(filename.c_str(), mode, &fp), format("can not open file %s to modify\n", filename.c_str()));
+        coordname_.push_back("CoordinateX");
+        coordname_.push_back("CoordinateY");
+        coordname_.push_back("CoordinateZ");
+        // 暂时跳过读取已有 section，后续可能需要手动设置 idOffset_
+        break;
     default: break;
     }
     isOpen_ = true;
@@ -660,6 +667,11 @@ void CGFile::writeCoordinate(const vector<vector<double>> &data)
         const char *coordname = coordname_[iCoord].c_str();
         check(cg_coord_write(fp, 1, 1, RealDouble, coordname, data[iCoord].data(), &dummy), format("write coordinate %s\n", coordname));
     }
+}
+
+void CGFile::setIdOffset(cgsize_t offset)
+{
+    idOffset_ = offset;
 }
 
 void CGFile::writeSection(Section &curS, const map<cgsize_t, cgsize_t> &nodeIdG2L)
