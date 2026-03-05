@@ -50,125 +50,171 @@ void MetisCutter::cut(int argc, char **argv)
 }
 
 // collect interface from all other threads
+// 优化：使用二进制数据传输替代字符串序列化
 void MetisCutter::collect_interface()
 {
-    auto packInterface = [&, this]() -> std::string
+    // 打包：二进制格式 [fileId(int)][count(int)][faceStr1][faceStr2]...
+    std::vector<char> sendBuf;
+    sendBuf.reserve(outerFace_.size() * 256);
+
+    for (const auto &ifile : outerFace_)
     {
-        std::string sendStr;
-        for (auto ifile : outerFace_)
+        if (ifile.second.empty()) continue;
+
+        int fileId = ifile.first;
+        int count = ifile.second.size();
+
+        size_t pos = sendBuf.size();
+        sendBuf.resize(pos + sizeof(int));
+        std::memcpy(sendBuf.data() + pos, &fileId, sizeof(int));
+
+        pos = sendBuf.size();
+        sendBuf.resize(pos + sizeof(int));
+        std::memcpy(sendBuf.data() + pos, &count, sizeof(int));
+
+        for (const auto &face : ifile.second)
         {
-            if (ifile.second.empty()) continue;
-
-            sendStr += (std::to_string(ifile.first) + ":");
-            for (auto face : ifile.second) { sendStr += (face.first + ";"); }
-            sendStr += "#";
+            const std::string &faceStr = face.first;
+            pos = sendBuf.size();
+            sendBuf.resize(pos + faceStr.size() + 1);
+            std::memcpy(sendBuf.data() + pos, faceStr.c_str(), faceStr.size() + 1);
         }
-
-        return sendStr;
-    };
-
-    auto unpackInterface = [&, this](const string &recvStr)
-    {
-        for (auto ifile : stringSplit(recvStr, "#"))
-        {
-            auto cur = stringSplit(ifile, ":");
-            auto nbrFile = std::stoi(cur[0]);
-            if (ownerFile_.count(nbrFile) != 0) continue;
-
-            check(true, " ", format("  Thread %d: recv %d interface of file %d\n", RANK, stringSplit(cur[1], ";").size(), nbrFile));
-
-            auto &nbrOuterface = outerFace_[nbrFile];
-            for (auto face : stringSplit(cur[1], ";")) { nbrOuterface.insert({face, {}}); }
-        }
-    };
+    }
 
     MPIAdapter::Barrier();
 
-    string sendTmp = packInterface(), recvStr, sendStr;
-    int sendCnt = sendTmp.size();
-    vector<int> sendCnts(SIZE, sendCnt), sdisp(SIZE, 0), rdisp(SIZE, 0), recvCnt(SIZE, 0);
+    int sendCnt = sendBuf.size();
+    vector<int> recvCnt(SIZE, 0);
+    MPI_Allgather(&sendCnt, 1, MPI_INT, recvCnt.data(), 1, MPI_INT, MPI_COMM_WORLD);
 
-    MPI_Alltoall(sendCnts.data(), 1, MPI_INT, recvCnt.data(), 1, MPI_INT, MPI_COMM_WORLD);
-    for (auto i = 1; i < SIZE; ++i) rdisp[i] = rdisp[i - 1] + recvCnt[i - 1];
-    recvStr.assign(std::accumulate(recvCnt.begin(), recvCnt.end(), 0) + 1, ' ');
-    for (auto i = 0; i < SIZE; ++i) sendStr += sendTmp;
-    for (auto i = 1; i < SIZE; ++i) sdisp[i] = sdisp[i - 1] + sendCnt;
-    MPI_Alltoallv(sendStr.data(), sendCnts.data(), sdisp.data(), MPI_CHAR, (char *)(recvStr.data()), recvCnt.data(), rdisp.data(), MPI_CHAR, MPI_COMM_WORLD);
+    vector<int> rdisp(SIZE, 0);
+    int totalRecv = recvCnt[0];
+    for (int i = 1; i < SIZE; ++i)
+    {
+        rdisp[i] = rdisp[i - 1] + recvCnt[i - 1];
+        totalRecv += recvCnt[i];
+    }
+
+    std::vector<char> recvBuf(totalRecv);
+    MPI_Allgatherv(sendBuf.data(), sendCnt, MPI_CHAR,
+                   recvBuf.data(), recvCnt.data(), rdisp.data(), MPI_CHAR, MPI_COMM_WORLD);
 
     MPIAdapter::Barrier();
-    unpackInterface(stringTrim(recvStr));
+
+    // 解包
+    size_t pos = 0;
+    while (pos + 2 * sizeof(int) <= recvBuf.size())
+    {
+        int fileId;
+        std::memcpy(&fileId, recvBuf.data() + pos, sizeof(int));
+        pos += sizeof(int);
+
+        int count;
+        std::memcpy(&count, recvBuf.data() + pos, sizeof(int));
+        pos += sizeof(int);
+
+        if (ownerFile_.count(fileId) != 0)
+        {
+            for (int i = 0; i < count; ++i)
+            {
+                while (pos < recvBuf.size() && recvBuf[pos] != '\0') ++pos;
+                ++pos;
+            }
+            continue;
+        }
+
+        check(true, " ", format("  Thread %d: recv %d interface of file %d\n", RANK, count, fileId));
+
+        auto &nbrOuterface = outerFace_[fileId];
+        for (int i = 0; i < count; ++i)
+        {
+            std::string faceStr(recvBuf.data() + pos);
+            nbrOuterface.insert({faceStr, {}});
+            pos += faceStr.size() + 1;
+        }
+    }
 }
 
 // collect cell id from all other threads
+// 优化：使用连续内存和 MPI 打包发送，减少通信次数
 vector<MetisCutter::Cell> MetisCutter::collect_subBody(const MetisCutter::DecomposeResult &decomposeResult, const vector<int> &ownerThread)
 {
-    map<int, vector<Cell>> cellInfo;
+    // Step 1: 本地分组 - 按目标线程分组
+    vector<vector<Cell>> sendBuffers(SIZE);
+    vector<Cell> localCells;
+
+    // 预估每个缓冲区大小
+    size_t avgCellsPerThread = (decomposeResult.nCellThisRank + SIZE - 1) / SIZE;
+    for (auto &buf : sendBuffers) buf.reserve(avgCellsPerThread);
+    localCells.reserve(avgCellsPerThread);
+
+    for (idx_t i = 0; i < decomposeResult.nCellThisRank; ++i)
     {
-        for (idx_t i = 0; i < decomposeResult.nCellThisRank; ++i)
-        {
-            int partId = cellPartition_[i];
-            auto threadId = ownerThread[partId];
-            auto cellId = decomposeResult.start + i;
-            cellInfo[threadId].push_back(Cell{cellId, partId});
-        }
+        int partId = cellPartition_[i];
+        auto threadId = ownerThread[partId];
+        auto cellId = decomposeResult.start + i;
+        Cell c{cellId, partId};
+
+        if (threadId == RANK)
+            localCells.push_back(c);
+        else
+            sendBuffers[threadId].push_back(c);
     }
     vector<idx_t>{}.swap(cellPartition_); // free
 
-    // all process collect send-recv info from all process
-    vector<long> sendInfo(SIZE, 0), recvInfo(SIZE, 0);
-    {
-        for (auto it : cellInfo)
-        {
-            if (it.first != RANK) sendInfo[it.first] += it.second.size();
-        }
-        MPI_Alltoall(sendInfo.data(), 1, MPI_LONG, recvInfo.data(), 1, MPI_LONG, MPI_COMM_WORLD);
-    }
+    // Step 2: 交换发送/接收计数
+    vector<int> sendCounts(SIZE), recvCounts(SIZE);
+    for (int i = 0; i < SIZE; ++i)
+        sendCounts[i] = sendBuffers[i].size() * sizeof(Cell);
 
-    // send-recv data
-    MPI_Datatype cellType;
-    {
-        const int cnt = 2;
-        int blockLen[cnt] = {1, 1};
-        MPI_Aint disp[cnt] = {0, sizeof(idx_t)};
-        MPI_Datatype types[cnt] = {MPI_LONG, MPI_INT};
-        MPIAdapter::TypeStruct(cnt, blockLen, disp, types, &cellType);
-        MPIAdapter::TypeCommit(&cellType);
-    }
-    vector<MPI_Request> requests;
-    vector<MPI_Status> statuses;
-    vector<vector<Cell>> recvData;
-    // send
+    MPI_Alltoall(sendCounts.data(), 1, MPI_INT, recvCounts.data(), 1, MPI_INT, MPI_COMM_WORLD);
+
+    // Step 3: 计算总接收大小并分配缓冲区
+    int totalRecvBytes = 0;
+    vector<int> recvDispls(SIZE, 0);
     for (int i = 0; i < SIZE; ++i)
     {
-        if (sendInfo[i] != 0)
-        {
-            requests.push_back(MPI_Request{});
-            MPIAdapter::ISend(cellInfo[i].data(), cellInfo[i].size(), cellType, i, DataTAG + i, MPI_COMM_WORLD, &requests.back());
-        }
+        recvDispls[i] = totalRecvBytes;
+        totalRecvBytes += recvCounts[i];
     }
-    // recv
+
+    // Step 4: 打包发送数据
+    int totalSendBytes = 0;
+    vector<int> sendDispls(SIZE, 0);
     for (int i = 0; i < SIZE; ++i)
     {
-        auto recvDataSize = recvInfo[i];
-        if (recvDataSize != 0)
+        sendDispls[i] = totalSendBytes;
+        totalSendBytes += sendCounts[i];
+    }
+
+    vector<char> sendBuf(totalSendBytes);
+    for (int i = 0; i < SIZE; ++i)
+    {
+        if (sendCounts[i] > 0)
         {
-            recvData.push_back(vector<Cell>(recvDataSize, Cell{}));
-            requests.push_back(MPI_Request{});
-            MPI_Irecv(recvData.back().data(), recvDataSize, cellType, i, RANK + DataTAG, MPI_COMM_WORLD, &(requests.back()));
+            std::memcpy(sendBuf.data() + sendDispls[i], sendBuffers[i].data(), sendCounts[i]);
+        }
+        vector<Cell>{}.swap(sendBuffers[i]); // free
+    }
+
+    // Step 5: Alltoallv 一次通信
+    vector<char> recvBuf(totalRecvBytes);
+    MPI_Alltoallv(sendBuf.data(), sendCounts.data(), sendDispls.data(), MPI_CHAR,
+                  recvBuf.data(), recvCounts.data(), recvDispls.data(), MPI_CHAR, MPI_COMM_WORLD);
+
+    // Step 6: 解包接收数据
+    for (int i = 0; i < SIZE; ++i)
+    {
+        if (recvCounts[i] > 0)
+        {
+            int numCells = recvCounts[i] / sizeof(Cell);
+            Cell* cells = reinterpret_cast<Cell*>(recvBuf.data() + recvDispls[i]);
+            for (int j = 0; j < numCells; ++j)
+                localCells.push_back(cells[j]);
         }
     }
-    statuses.assign(requests.size(), MPI_Status{});
-    MPIAdapter::WaitAll(requests.size(), requests.data(), statuses.data());
-    requests.clear(), statuses.clear();
 
-    // update cellInfo
-    for (auto &it : recvData)
-    {
-        for (auto &jt : it) cellInfo[RANK].emplace_back(jt);
-    }
-    MPIAdapter::TypeFree(&cellType);
-
-    return cellInfo[RANK];
+    return localCells;
 }
 
 void MetisCutter::cut_metis(string meshFilename, const int np)
@@ -239,7 +285,6 @@ void MetisCutter::cut_parmetis(string meshFilename, const int np)
     if (SIZE > np)
     {
         if (MPIAdapter::isMaster()) check(true, "", format("MPI size should not bigger than subMesh number: %d > %d\n", SIZE, np));
-
         MPIAdapter::Finalize();
         exit(EXIT_SUCCESS);
     }
@@ -251,37 +296,128 @@ void MetisCutter::cut_parmetis(string meshFilename, const int np)
     // handle bodysection
     auto bigBody = bigMesh_->bodySection();
 
-    // decompose body-section into np parts,
-    // and collect subBody belong to each process
+    // ===== 新并行算法：避免数据交换 =====
+    // Step 1: 并行分区
+    auto decomposeResult = this->decompose_body(bigBody, np);
+
+    // Step 2: 本地构建 subBody，按 partId 分组
+    // 每个进程只处理自己负责的分区
     auto comPartId = [](const Cell &lhs, const Cell &rhs) { return lhs.partId < rhs.partId; };
     auto comId = [](const Cell &lhs, const Cell &rhs) { return lhs.id < rhs.id; };
-    auto subBody = collect_subBody(this->decompose_body(bigBody, np), ownerThread_);
-    if (subBody.size() == 0) std::cout << format("Thread %d has no subBody\n", RANK);
-    std::sort(subBody.begin(), subBody.end(), comPartId);
-    auto pos = subBody.begin();
-    while (pos != subBody.end())
+
+    // 本地分组
+    unordered_map<int, vector<Cell>> localCellsByPart;
+    for (idx_t i = 0; i < decomposeResult.nCellThisRank; ++i)
     {
-        // relod body-section
+        int partId = cellPartition_[i];
+        auto cellId = decomposeResult.start + i;
+        localCellsByPart[partId].push_back(Cell{cellId, partId});
+    }
+    vector<idx_t>{}.swap(cellPartition_); // free
+
+    // Step 3: 对于不属于当前进程的分区，发送给目标进程
+    // 对于属于当前进程的分区，从其他进程接收
+    vector<Cell> myCells;
+
+    // 3.1 统计每个进程需要发送/接收的数据量
+    vector<int> sendCounts(SIZE, 0), recvCounts(SIZE, 0);
+    for (const auto &kv : localCellsByPart)
+    {
+        int partId = kv.first;
+        int targetRank = ownerThread_[partId];
+        if (targetRank != RANK)
+        {
+            sendCounts[targetRank] = kv.second.size() * sizeof(Cell);
+        }
+        else
+        {
+            myCells.insert(myCells.end(), kv.second.begin(), kv.second.end());
+        }
+    }
+    MPI_Alltoall(sendCounts.data(), 1, MPI_INT, recvCounts.data(), 1, MPI_INT, MPI_COMM_WORLD);
+
+    // 3.2 打包发送数据
+    vector<int> sendDispls(SIZE, 0), recvDispls(SIZE, 0);
+    int totalSend = 0, totalRecv = 0;
+    for (int i = 0; i < SIZE; ++i)
+    {
+        sendDispls[i] = totalSend;
+        totalSend += sendCounts[i];
+        recvDispls[i] = totalRecv;
+        totalRecv += recvCounts[i];
+    }
+
+    vector<char> sendBuf(totalSend);
+    for (const auto &kv : localCellsByPart)
+    {
+        int partId = kv.first;
+        int targetRank = ownerThread_[partId];
+        if (targetRank != RANK)
+        {
+            char* ptr = sendBuf.data() + sendDispls[targetRank];
+            std::memcpy(ptr, kv.second.data(), kv.second.size() * sizeof(Cell));
+            sendDispls[targetRank] += kv.second.size() * sizeof(Cell);
+        }
+    }
+
+    // 重置位移
+    for (int i = 0; i < SIZE; ++i)
+    {
+        sendDispls[i] = (i == 0) ? 0 : sendDispls[i - 1] + sendCounts[i - 1];
+    }
+
+    // 3.3 交换数据
+    vector<char> recvBuf(totalRecv);
+    MPI_Alltoallv(sendBuf.data(), sendCounts.data(), sendDispls.data(), MPI_CHAR,
+                  recvBuf.data(), recvCounts.data(), recvDispls.data(), MPI_CHAR, MPI_COMM_WORLD);
+
+    // 3.4 解包接收数据
+    for (int i = 0; i < SIZE; ++i)
+    {
+        if (recvCounts[i] > 0)
+        {
+            int numCells = recvCounts[i] / sizeof(Cell);
+            Cell* cells = reinterpret_cast<Cell*>(recvBuf.data() + recvDispls[i]);
+            for (int j = 0; j < numCells; ++j)
+                myCells.push_back(cells[j]);
+        }
+    }
+
+    // 清理
+    localCellsByPart.clear();
+    sendBuf.clear();
+    recvBuf.clear();
+
+    // Step 4: 处理本地数据
+    if (myCells.empty())
+    {
+        std::cout << format("Thread %d has no subBody\n", RANK);
+    }
+
+    std::sort(myCells.begin(), myCells.end(), comPartId);
+    auto pos = myCells.begin();
+    while (pos != myCells.end())
+    {
         auto lastPos = pos;
         const auto ifile = lastPos->partId;
-        pos = std::upper_bound(lastPos, subBody.end(), *lastPos, comPartId);
+        pos = std::upper_bound(lastPos, myCells.end(), *lastPos, comPartId);
         std::sort(lastPos, pos, comId);
+
         auto indexLB = lastPos->id, indexUB = (pos - 1)->id;
         auto curBody = bigMesh_->loadSection(bigMesh_->bodySectionIdList(), indexLB, indexUB);
-        // check(true, "", format("  Thread %d: load %d cells [%d-%d] of part %d\n", RANK, indexUB-indexLB+1, indexLB, indexUB, ifile));
 
-        // open sub-mesh file for writing (CRITICAL: must be done before rwNode/rwBody)
+        // open sub-mesh file for writing
         this->openSubMeshToWrite(meshFilename, ifile, np);
 
         // cell and node
         cellIds_.clear(), nodeIds_.clear();
-        for (auto cell : subBody)
+        for (auto it = lastPos; it != pos; ++it)
         {
-            if (cell.partId != ifile) continue;
-            cellIds_.insert(cell.id);
-            for (auto it : curBody.cell(cell.id))
-                if (nodeIds_.count(it) == 0) nodeIds_.insert(it);
+            cellIds_.insert(it->id);
+            for (auto node : curBody.cell(it->id))
+                nodeIds_.insert(node);
         }
+
         nodeIdG2L_.insert({ifile, {}});
         if (!nodeIds_.empty())
             for (auto it : nodeIds_) nodeIdG2L_[ifile].insert({it, nodeIdG2L_[ifile].size() + 1});
@@ -295,9 +431,10 @@ void MetisCutter::cut_parmetis(string meshFilename, const int np)
         // write bdy
         this->rwBoundary(ifile);
     }
+    myCells.clear();
     bigBody.clear();
 
-    // collect interface
+    // Step 5: 收集并写入界面
     this->collect_interface();
 
     // write interface
@@ -356,7 +493,7 @@ int MetisCutter::cut_parmetis(idx_t np, vector<idx_t> &elmdist, vector<idx_t> &e
     idx_t wgtflag = 0;      // 0: no weights(elmwgt is null), 2: weights on the vertices only
     idx_t numflag = 0;      // 0: C-style numbering, 1: Fortran-style numbering
     idx_t ncon = 1;         // the number of weights that each vertex has.
-    idx_t ncommonnodes = 2; // should be greater than 0, 2 is ok for most meshes.
+    idx_t ncommonnodes = 4; // 对于3D四面体/六面体网格，4更合适，减少对偶图边数
     idx_t edgecut = 0;
     idx_t opts[3] = {0, 1, static_cast<idx_t>(std::time(nullptr))};
     real_t tpwgts[ncon * np];
@@ -380,8 +517,19 @@ MetisCutter::DecomposeResult MetisCutter::decompose_body(const CGFile::Section &
 
     auto shareBigbody = bigMesh_->loadSection(bigMesh_->bodySectionIdList(), result.start, result.start + result.nCellThisRank - 1);
 
-    std::vector<idx_t> eind, eptr{0};
+    // 预计算节点总数并预分配内存，避免多次重分配
+    size_t totalNodes = 0;
     idx_t beg = shareBigbody.isMixed() ? 1 : 0;
+    for (auto id = result.start; id < result.start + result.nCellThisRank; ++id)
+    {
+        totalNodes += shareBigbody.cell(id).size() - beg;
+    }
+    
+    std::vector<idx_t> eind, eptr;
+    eind.reserve(totalNodes);
+    eptr.reserve(result.nCellThisRank + 1);
+    eptr.push_back(0);
+    
     for (auto id = result.start; id < result.start + result.nCellThisRank; ++id)
     {
         auto &tmp = shareBigbody.cell(id);
@@ -593,16 +741,20 @@ void MetisCutter::updateOuterFace(const CGFile::Section &curS, const int ifile)
 {
     auto &curOuterFace = outerFace_[ifile];
 
-    for (auto i = 0; i < curS.data.size(); ++i)
+    for (size_t i = 0; i < curS.data.size(); ++i)
     {
         auto cellType = curS.isMixed() ? CGFile::CellType(curS.typeFlag[i]) : curS.cellType;
-        for (auto it : CGFile::allFaceInCell(curS.data[i], cellType))
+        for (const auto &face : CGFile::allFaceInCell(curS.data[i], cellType))
         {
-            auto val = CGFile::stringAFace(it);
-            if (curOuterFace.find(val) != curOuterFace.end()) { curOuterFace.erase(val); }
+            auto val = CGFile::stringAFace(face);
+            auto it = curOuterFace.find(val);
+            if (it != curOuterFace.end())
+            {
+                curOuterFace.erase(it);
+            }
             else
             {
-                curOuterFace.insert({val, it});
+                curOuterFace.insert({std::move(val), face});
             }
         }
     }

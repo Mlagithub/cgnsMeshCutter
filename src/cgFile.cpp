@@ -139,8 +139,8 @@ bool CGFile::CellLoader::loadNextBlock()
 
 void CGFile::Section::addCell(const cgsize_t id, const vector<cgsize_t> &idList, const cgsize_t flag)
 {
-    data.emplace_back(idList);
-    IDMap.insert({id, IDMap.size()});
+    data.emplace_back(idList); // 拷贝 idList
+    IDMap.emplace(id, IDMap.size()); // 使用 emplace 替代 insert
     typeFlag.push_back(flag);
     offset.push_back(offset.back() + idList.size() + 1);
 }
@@ -212,13 +212,16 @@ vector<vector<cgsize_t>> CGFile::allFaceInCell(const vector<cgsize_t> &idList, E
 {
     check((CGFile::nodeIdToBuildFaceInCell.count(type) != 0), format("not supported cell type %d\n", type));
 
+    const auto &faceTemplates = CGFile::nodeIdToBuildFaceInCell.at(type);
     vector<vector<cgsize_t>> rst;
+    rst.reserve(faceTemplates.size()); // 预分配
 
-    for (auto nodes : CGFile::nodeIdToBuildFaceInCell.at(type))
+    for (const auto &nodes : faceTemplates)
     {
         vector<cgsize_t> face;
+        face.reserve(nodes.size()); // 预分配
         for (auto it : nodes) face.push_back(idList[it]);
-        rst.emplace_back(face);
+        rst.emplace_back(std::move(face));
     }
 
     return rst;
@@ -549,6 +552,12 @@ CGFile::Section CGFile::loadSection(const vector<int> idList, const cgsize_t sta
     curS.end = end;
     cgsize_t ID = start;
 
+    // 预估单元数量
+    cgsize_t estimatedCells = end - start + 1;
+    curS.data.reserve(estimatedCells);
+    curS.typeFlag.reserve(estimatedCells);
+    curS.offset.reserve(estimatedCells + 1);
+
     for (auto bodyId : idList)
     {
         auto &curBody = sections_[bodyId];
@@ -584,14 +593,52 @@ int CGFile::precision()
 
 CGFile::Section &CGFile::section(const int id) { return sections_[id]; }
 
+// 优化：避免创建临时 set，使用直接排序和更高效的字符串构建
 string CGFile::stringAFace(const vector<cgsize_t> &face)
 {
     if (face.empty()) return "";
 
-    set<cgsize_t> tmp;
-    for (auto it : face) tmp.insert(it);
+    // 小面直接处理，避免动态分配
+    if (face.size() <= 4)
+    {
+        // 复制到小数组并排序
+        cgsize_t sorted[4];
+        for (size_t i = 0; i < face.size(); ++i) sorted[i] = face[i];
+        std::sort(sorted, sorted + face.size());
 
-    return std::accumulate(std::next(tmp.begin()), tmp.end(), std::to_string(*tmp.begin()), [](string sum, const cgsize_t id) { return sum + "-" + std::to_string(id); });
+        // 使用 snprintf 一次性构建字符串
+        char buf[128];
+        int pos = 0;
+        for (size_t i = 0; i < face.size(); ++i)
+        {
+            if (i > 0) buf[pos++] = '-';
+            pos += snprintf(buf + pos, sizeof(buf) - pos, "%ld", (long)sorted[i]);
+        }
+        return string(buf, pos);
+    }
+
+    // 大面使用 vector
+    vector<cgsize_t> sorted(face.begin(), face.end());
+    std::sort(sorted.begin(), sorted.end());
+
+    // 预计算字符串大小
+    size_t totalLen = 0;
+    for (auto id : sorted)
+    {
+        totalLen += 20; // 足够容纳一个 cgsize_t 和分隔符
+    }
+
+    string result;
+    result.reserve(totalLen);
+
+    result = std::to_string(sorted[0]);
+    for (size_t i = 1; i < sorted.size(); ++i)
+    {
+        result += '-';
+        result += std::to_string(sorted[i]);
+    }
+
+    return result;
 }
 
 void CGFile::writeCoordinate(const vector<vector<double>> &data)
